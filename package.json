@@ -1,0 +1,22 @@
+{
+  "name": "tool-provisioning",
+  "private": true,
+  "packageManager": "npm@11.6.2",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "app"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace app",
+    "dev:turbo": "npm run dev:turbo --workspace app",
+    "build": "npm run build --workspace app",
+    "start": "npm run start --workspace app",
+    "lint": "npm run lint --workspace app",
+    "test": "npm run test --workspace app",
+    "db:generate": "npm run db:generate --workspace app",
+    "db:migrate": "npm run db:migrate --workspace app",
+    "db:push": "npm run db:push --workspace app"
+  }
+}

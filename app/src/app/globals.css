@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  /* Surface hierarchy */
+  --color-surface-dim: #0e0e10;
+  --color-surface: #0e0e10;
+  --color-surface-container-lowest: #000000;
+  --color-surface-container-low: #131316;
+  --color-surface-container: #19191d;
+  --color-surface-container-high: #1f1f24;
+  --color-surface-container-highest: #25252b;
+  --color-surface-bright: #2b2c32;
+
+  /* Primary */
+  --color-primary: #3B82F6;
+  --color-primary-container: #004395;
+  --color-primary-dim: #98b8ff;
+  --color-on-primary: #ffffff;
+
+  /* Text */
+  --color-on-surface: #e6e4ec;
+  --color-on-surface-variant: #abaab1;
+
+  /* Outline */
+  --color-outline: #75757b;
+  --color-outline-variant: #47474d;
+
+  /* Error */
+  --color-error: #ee7d77;
+  --color-error-container: #7f2927;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top, rgba(59, 130, 246, 0.12), transparent 32%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 18%),
+    var(--color-surface);
+  color: var(--color-on-surface);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a,
+button,
+input,
+textarea,
+select {
+  transition:
+    color 150ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease,
+    opacity 150ms ease;
+}
+
+::selection {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
