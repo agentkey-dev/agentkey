@@ -710,10 +710,6 @@ function ToolAgentsPanel({
 }) {
   const [query, setQuery] = useState("");
 
-  useEffect(() => {
-    setQuery("");
-  }, [tool.id]);
-
   const grantedAgentIds = useMemo(
     () => new Set(tool.approvedAgentList.map((entry) => entry.agentId)),
     [tool.approvedAgentList],
@@ -1570,6 +1566,7 @@ export function ToolCatalogShell({
                 </div>
 
                 <ToolAgentsPanel
+                  key={selectedTool.id}
                   tool={selectedTool}
                   agents={agents}
                   onAgentGranted={(agentId) => {

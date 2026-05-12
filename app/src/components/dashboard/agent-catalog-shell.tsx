@@ -11,6 +11,7 @@ import {
 } from "react";
 
 import { AgentActionButton } from "@/components/dashboard/agent-action-button";
+import { AgentRotateKeyButton } from "@/components/dashboard/agent-rotate-key-button";
 import { AgentUpdateForm } from "@/components/dashboard/agent-update-form";
 import { unwrapResponseData } from "@/components/dashboard/api";
 import { StatusBadge } from "@/components/dashboard/status-badge";
@@ -24,12 +25,14 @@ import {
   rotateAgentCatalogKey,
   suspendAgentInCatalog,
   type AgentCatalogItem,
-  type AgentCatalogPendingToolSummary,
   type AgentRecentActivityEvent,
   type AgentStatus,
 } from "@/lib/agent-catalog";
 import { getBrandfetchLogoUrl } from "@/lib/tool-branding";
 import type { ToolCatalogItem } from "@/lib/tool-catalog";
+
+const SKIP_ROTATE_CONFIRM_STORAGE_KEY =
+  "agentkey:agents:skip-rotate-confirm";
 
 function updateAgentsUrl(
   selectedAgentId: string | null,
@@ -516,10 +519,6 @@ function AgentToolsPanel({
 }) {
   const [query, setQuery] = useState("");
 
-  useEffect(() => {
-    setQuery("");
-  }, [agent.id]);
-
   const toolsById = useMemo(() => {
     const map = new Map<string, ToolCatalogItem>();
     for (const tool of tools) {
@@ -741,6 +740,7 @@ export function AgentCatalogShell({
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(
     initialSelectedAgentId ?? null,
   );
+  const [skipRotateConfirm, setSkipRotateConfirm] = useState(false);
   const [recentActivity, setRecentActivity] = useState<AgentRecentActivityEvent[]>(
     [],
   );
@@ -754,6 +754,17 @@ export function AgentCatalogShell({
   useEffect(() => {
     setSelectedAgentId(initialSelectedAgentId ?? null);
   }, [initialSelectedAgentId]);
+
+  useEffect(() => {
+    try {
+      setSkipRotateConfirm(
+        window.localStorage.getItem(SKIP_ROTATE_CONFIRM_STORAGE_KEY) ===
+          "true",
+      );
+    } catch {
+      setSkipRotateConfirm(false);
+    }
+  }, []);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -892,6 +903,23 @@ export function AgentCatalogShell({
     updateAgentsUrl(null, mode);
   }
 
+  function updateSkipRotateConfirm(next: boolean) {
+    setSkipRotateConfirm(next);
+
+    try {
+      window.localStorage.setItem(
+        SKIP_ROTATE_CONFIRM_STORAGE_KEY,
+        String(next),
+      );
+    } catch {
+      // Browser storage can be unavailable in private or locked-down contexts.
+    }
+  }
+
+  function handleAgentRotated(agentId: string, rotatedAt: string) {
+    setAgents((current) => rotateAgentCatalogKey(current, agentId, rotatedAt));
+  }
+
   const renderedChildren =
     isValidElement(children)
       ? cloneElement(
@@ -911,7 +939,7 @@ export function AgentCatalogShell({
       {renderedChildren}
 
       <section className="space-y-4 border border-white/10 bg-surface-container p-4">
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px_auto]">
           <label className="grid gap-2 text-sm text-on-surface-variant">
             Search agents
             <input
@@ -935,6 +963,18 @@ export function AgentCatalogShell({
               <option value="suspended">Suspended</option>
             </select>
           </label>
+          <div className="flex items-end">
+            <div className="flex min-h-10 items-center gap-3 border border-white/10 bg-surface px-3 py-2">
+              <Switch
+                checked={skipRotateConfirm}
+                onChange={() => updateSkipRotateConfirm(!skipRotateConfirm)}
+                ariaLabel="Skip rotate confirmation"
+              />
+              <span className="whitespace-nowrap text-sm text-on-surface-variant">
+                Skip rotate confirmation
+              </span>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -958,7 +998,7 @@ export function AgentCatalogShell({
                   <th className="px-3 py-3 font-normal">Granted</th>
                   <th className="px-3 py-3 font-normal">Pending</th>
                   <th className="px-3 py-3 font-normal">Last active</th>
-                  <th className="px-5 py-3 font-normal text-right" aria-label="Open" />
+                  <th className="px-5 py-3 font-normal text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -1020,13 +1060,22 @@ export function AgentCatalogShell({
                           <span className="text-on-surface-variant/60">—</span>
                         )}
                       </td>
-                      <td className="px-5 py-4 text-right">
-                        <span
-                          aria-hidden="true"
-                          className="font-mono text-xs text-on-surface-variant/60"
-                        >
-                          →
-                        </span>
+                      <td className="px-5 py-4">
+                        <div className="flex items-center justify-end gap-3">
+                          <AgentRotateKeyButton
+                            agentId={agent.id}
+                            agentName={agent.name}
+                            skipConfirm={skipRotateConfirm}
+                            compact
+                            onRotated={handleAgentRotated}
+                          />
+                          <span
+                            aria-hidden="true"
+                            className="font-mono text-xs text-on-surface-variant/60"
+                          >
+                            →
+                          </span>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1073,20 +1122,11 @@ export function AgentCatalogShell({
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <AgentActionButton
-                    endpoint={`/api/admin/agents/${selectedAgent.id}/rotate-key`}
-                    method="POST"
-                    label="Rotate key"
-                    confirmMessage={`Rotate the API key for ${selectedAgent.name}?`}
-                    onCompleted={() => {
-                      setAgents((current) =>
-                        rotateAgentCatalogKey(
-                          current,
-                          selectedAgent.id,
-                          new Date().toISOString(),
-                        ),
-                      );
-                    }}
+                  <AgentRotateKeyButton
+                    agentId={selectedAgent.id}
+                    agentName={selectedAgent.name}
+                    skipConfirm={skipRotateConfirm}
+                    onRotated={handleAgentRotated}
                   />
                   {selectedAgent.status === "active" ? (
                     <AgentActionButton
@@ -1158,6 +1198,7 @@ export function AgentCatalogShell({
                 </section>
 
                 <AgentToolsPanel
+                  key={selectedAgent.id}
                   agent={selectedAgent}
                   tools={tools}
                   brandfetchClientId={brandfetchClientId}

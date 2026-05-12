@@ -95,7 +95,7 @@ export function jsonData(
 const textDecoder = new TextDecoder();
 const AGENT_CORS_ALLOWED_HEADERS = "Authorization, Content-Type";
 const AGENT_CORS_EXPOSED_HEADERS =
-  "X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset";
+  "X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-RateLimit-Policy";
 
 export const AGENT_JSON_BODY_LIMIT = 8192;
 export const ADMIN_JSON_BODY_LIMIT = 32768;

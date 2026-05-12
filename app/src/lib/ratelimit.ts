@@ -55,9 +55,82 @@ const limiters: Record<RateLimitTier, Ratelimit> = {
   preauth: preauthLimiter,
 };
 
+const RATE_LIMIT_BYPASS_HEADERS = {
+  "X-RateLimit-Limit": "0",
+  "X-RateLimit-Remaining": "0",
+  "X-RateLimit-Reset": "0",
+  "X-RateLimit-Policy": "bypassed",
+};
+
+const RATE_LIMIT_FAILURE_WARNING_INTERVAL_MS = 60_000;
+const DEFAULT_RATE_LIMIT_RETRY_AFTER_MS = 5 * 60_000;
+let lastRateLimitFailureWarningAt = 0;
+let rateLimitProviderUnavailableUntil = 0;
+
+function shouldFailClosed() {
+  return process.env.RATE_LIMIT_REDIS_FAILURE_MODE === "closed";
+}
+
+function getRateLimitRetryAfterMs() {
+  const configuredValue = Number.parseInt(
+    process.env.RATE_LIMIT_REDIS_RETRY_AFTER_MS ?? "",
+    10,
+  );
+
+  if (Number.isFinite(configuredValue) && configuredValue > 0) {
+    return configuredValue;
+  }
+
+  return DEFAULT_RATE_LIMIT_RETRY_AFTER_MS;
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function warnRateLimitBypass(tier: RateLimitTier, error: unknown) {
+  const now = Date.now();
+
+  if (now - lastRateLimitFailureWarningAt < RATE_LIMIT_FAILURE_WARNING_INTERVAL_MS) {
+    return;
+  }
+
+  lastRateLimitFailureWarningAt = now;
+  console.warn(
+    JSON.stringify({
+      event: "rate_limit_bypassed",
+      tier,
+      reason: getErrorMessage(error),
+      ts: new Date(now).toISOString(),
+    }),
+  );
+}
+
 export async function enforceRateLimit(agentId: string, tier: RateLimitTier) {
   const limiter = limiters[tier];
-  const { success, limit, remaining, reset } = await limiter.limit(agentId);
+  let result: Awaited<ReturnType<Ratelimit["limit"]>>;
+
+  try {
+    if (
+      !shouldFailClosed() &&
+      Date.now() < rateLimitProviderUnavailableUntil
+    ) {
+      return RATE_LIMIT_BYPASS_HEADERS;
+    }
+
+    result = await limiter.limit(agentId);
+  } catch (error) {
+    if (shouldFailClosed()) {
+      throw error;
+    }
+
+    rateLimitProviderUnavailableUntil =
+      Date.now() + getRateLimitRetryAfterMs();
+    warnRateLimitBypass(tier, error);
+    return RATE_LIMIT_BYPASS_HEADERS;
+  }
+
+  const { success, limit, remaining, reset } = result;
 
   const headers = {
     "X-RateLimit-Limit": String(limit),
