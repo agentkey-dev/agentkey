@@ -50,7 +50,11 @@ type AssignState = {
   grant: GrantState | null;
 };
 
-function createApproveTx(state: { grant: GrantState }, failAuditInsert: boolean) {
+function createApproveTx(
+  state: { grant: GrantState },
+  failAuditInsert: boolean,
+  events: string[] = [],
+) {
   return {
     select() {
       return {
@@ -86,6 +90,8 @@ function createApproveTx(state: { grant: GrantState }, failAuditInsert: boolean)
             where() {
               return {
                 returning: async () => {
+                  events.push("grant:update");
+
                   if (state.grant.status !== "pending") {
                     return [];
                   }
@@ -106,6 +112,10 @@ function createApproveTx(state: { grant: GrantState }, failAuditInsert: boolean)
     insert(table: unknown) {
       return {
         values: async () => {
+          if (table === auditLog) {
+            events.push("audit:insert");
+          }
+
           if (table === auditLog && failAuditInsert) {
             throw new Error("audit write failed");
           }
@@ -676,7 +686,7 @@ test("getRecentAgentActivity maps audit metadata into drawer activity events", a
   ]);
 });
 
-test("approveRequest rolls back the grant update if the audit insert fails", async () => {
+test("approveRequest leaves the grant pending if the audit insert fails first", async () => {
   const state = {
     grant: {
       id: "grant-1",
@@ -739,8 +749,9 @@ test("approveRequest runs on the direct D1 executor without explicit transaction
       updatedAt: new Date("2026-03-31T10:00:00.000Z"),
     },
   };
+  const events: string[] = [];
   const db = {
-    ...createApproveTx(state, false),
+    ...createApproveTx(state, false, events),
     transaction: async () => {
       throw new Error("transaction should not be called");
     },
@@ -757,6 +768,7 @@ test("approveRequest runs on the direct D1 executor without explicit transaction
   assert.equal(state.grant.status, "approved");
   assert.equal(decryptSecret(state.grant.credentialEncrypted ?? ""), "discord_bot_token");
   assert.equal(state.grant.decidedByUserId, "user-1");
+  assert.deepEqual(events, ["audit:insert", "grant:update"]);
 });
 
 test("assignToolToAgent rolls back a new grant if the audit insert fails", async () => {
@@ -1000,7 +1012,8 @@ test("assignToolToAgent reassigns revoked grants to approved", async () => {
   assert.equal(grant.credentialEncrypted, null);
 });
 
-test("assignToolToAgent rejects pending grants", async () => {
+test("assignToolToAgent approves pending grants", async () => {
+  const requestedAt = new Date("2026-03-18T08:00:00.000Z");
   const state: AssignState = {
     agent: {
       id: "agent-1",
@@ -1025,37 +1038,35 @@ test("assignToolToAgent rejects pending grants", async () => {
       decidedByUserId: null,
       decidedByEmail: null,
       decidedAt: null,
-      requestedAt: new Date("2026-03-18T08:00:00.000Z"),
-      createdAt: new Date("2026-03-18T08:00:00.000Z"),
+      requestedAt,
+      createdAt: requestedAt,
       updatedAt: new Date("2026-03-18T08:00:00.000Z"),
     },
   };
 
-  await withMockTransaction(
+  const grant = (await withMockTransaction(
     state,
     (draft) => createAssignTx(draft as AssignState),
-    async () => {
-      await assert.rejects(
-        () =>
-          assignToolToAgent(
-            "org-1",
-            "agent-1",
-            { toolId: "tool-1" },
-            {
-              actorId: "user-1",
-              actorEmail: "admin@example.com",
-            },
-          ),
-        (error) =>
-          error instanceof AppError &&
-          error.status === 409 &&
-          error.message.includes("pending request"),
-      );
-    },
-  );
+    () =>
+      assignToolToAgent(
+        "org-1",
+        "agent-1",
+        { toolId: "tool-1" },
+        {
+          actorId: "user-1",
+          actorEmail: "admin@example.com",
+        },
+      ),
+  )) as GrantState;
+
+  assert.equal(grant.status, "approved");
+  assert.equal(grant.reason, "Waiting");
+  assert.equal(grant.denialReason, null);
+  assert.equal(grant.requestedAt.toISOString(), requestedAt.toISOString());
+  assert.equal(grant.decidedByUserId, "user-1");
 });
 
-test("assignToolToAgent rejects approved grants", async () => {
+test("assignToolToAgent treats approved grants as already assigned", async () => {
   const state: AssignState = {
     agent: {
       id: "agent-1",
@@ -1086,28 +1097,24 @@ test("assignToolToAgent rejects approved grants", async () => {
     },
   };
 
-  await withMockTransaction(
+  const grant = (await withMockTransaction(
     state,
     (draft) => createAssignTx(draft as AssignState),
-    async () => {
-      await assert.rejects(
-        () =>
-          assignToolToAgent(
-            "org-1",
-            "agent-1",
-            { toolId: "tool-1" },
-            {
-              actorId: "user-1",
-              actorEmail: "admin@example.com",
-            },
-          ),
-        (error) =>
-          error instanceof AppError &&
-          error.status === 409 &&
-          error.message.includes("already has access"),
-      );
-    },
-  );
+    () =>
+      assignToolToAgent(
+        "org-1",
+        "agent-1",
+        { toolId: "tool-1" },
+        {
+          actorId: "user-1",
+          actorEmail: "admin@example.com",
+        },
+      ),
+  )) as GrantState;
+
+  assert.equal(grant.status, "approved");
+  assert.equal(grant.decidedByUserId, "user-1");
+  assert.equal(state.grant?.updatedAt.toISOString(), "2026-03-18T09:00:00.000Z");
 });
 
 test("assignToolToAgent rejects suspended agents", async () => {

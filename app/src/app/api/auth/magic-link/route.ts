@@ -6,6 +6,7 @@ import {
   normalizeEmail,
   sendMagicLinkEmail,
 } from "@/lib/auth/session";
+import { enforceMagicLinkRateLimits } from "@/lib/auth/magic-link";
 import { verifyTurnstileForAuth } from "@/lib/auth/turnstile";
 import { handleRouteError, readJsonBody } from "@/lib/http";
 
@@ -40,6 +41,9 @@ export async function POST(request: Request) {
       turnstileToken: body.turnstileToken ?? body.turnstileFormToken,
     });
     const email = normalizeEmail(parsed.email);
+
+    await enforceMagicLinkRateLimits(request, email);
+
     const turnstilePassed = await verifyTurnstileForAuth({
       token: parsed.turnstileToken,
       request,

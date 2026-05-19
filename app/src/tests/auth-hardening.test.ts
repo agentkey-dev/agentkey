@@ -6,16 +6,23 @@ import {
   createLoginToken,
   createSessionRecord,
   hashToken,
+  loginTokenHasRequiredVerification,
   revokeSessionToken,
   selectOrganizationForSession,
   sendMagicLinkEmailWithEnv,
 } from "@/lib/auth/session";
+import {
+  enforceMagicLinkRateLimits,
+  getMagicLinkRateLimitSubjects,
+} from "@/lib/auth/magic-link";
+import { isAdminMembership } from "@/lib/auth/admin";
 import { verifyTurnstileForAuth } from "@/lib/auth/turnstile";
 import {
   authLoginTokens,
   authSessions,
 } from "@/lib/db/schema";
 import { AppError } from "@/lib/http";
+import { RateLimitError } from "@/lib/ratelimit";
 
 async function withMockDb(db: unknown, callback: () => Promise<unknown>) {
   const previousDb = globalThis.__toolProvisioningDb;
@@ -26,6 +33,62 @@ async function withMockDb(db: unknown, callback: () => Promise<unknown>) {
   } finally {
     globalThis.__toolProvisioningDb = previousDb;
   }
+}
+
+async function withMockRateLimitD1(
+  d1: unknown,
+  callback: () => Promise<unknown>,
+) {
+  const previousD1 = globalThis.__toolProvisioningRateLimitD1;
+  globalThis.__toolProvisioningRateLimitD1 = d1 as never;
+
+  try {
+    return await callback();
+  } finally {
+    globalThis.__toolProvisioningRateLimitD1 = previousD1;
+  }
+}
+
+function createRateLimitD1() {
+  const buckets = new Map<
+    string,
+    { count: number; windowStart: number; windowMs: number; updatedAt: number }
+  >();
+
+  return {
+    buckets,
+    d1: {
+      prepare() {
+        return {
+          bind(key: string, now: number, windowMs: number, updatedAt: number) {
+            return {
+              first: async () => {
+                const bucket = buckets.get(key);
+                const shouldReset =
+                  !bucket ||
+                  now - bucket.windowStart >= windowMs ||
+                  bucket.windowMs !== windowMs;
+                const next = {
+                  count: shouldReset ? 1 : (bucket?.count ?? 0) + 1,
+                  windowStart: shouldReset ? now : (bucket?.windowStart ?? now),
+                  windowMs,
+                  updatedAt,
+                };
+
+                buckets.set(key, next);
+
+                return {
+                  count: next.count,
+                  windowStart: next.windowStart,
+                  windowMs: next.windowMs,
+                };
+              },
+            };
+          },
+        };
+      },
+    },
+  };
 }
 
 test("magic login tokens are normalized, hashed, expiring, and one-time", async () => {
@@ -120,7 +183,7 @@ test("magic login tokens cannot be consumed twice or after expiry", async () => 
   });
 });
 
-test("Turnstile auth verification is optional without a secret", async () => {
+test("local Turnstile auth verification is optional without a secret", async () => {
   const request = new Request("https://agentkey.test/sign-in");
   let fetched = false;
   const passed = await verifyTurnstileForAuth({
@@ -134,6 +197,22 @@ test("Turnstile auth verification is optional without a secret", async () => {
 
   assert.equal(passed, false);
   assert.equal(fetched, false);
+});
+
+test("production Turnstile auth verification fails closed without a secret", async () => {
+  const request = new Request("https://agentkey.dev/sign-in");
+
+  await assert.rejects(
+    () =>
+      verifyTurnstileForAuth({
+        request,
+        env: { APP_ENV: "production" } as never,
+      }),
+    (error) =>
+      error instanceof AppError &&
+      error.status === 500 &&
+      error.message === "Verification is not configured.",
+  );
 });
 
 test("Turnstile auth verification rejects missing and invalid tokens", async () => {
@@ -166,8 +245,47 @@ test("Turnstile auth verification rejects missing and invalid tokens", async () 
   );
 });
 
-test("Turnstile auth verification sends remote IP and accepts valid tokens", async () => {
-  const request = new Request("https://agentkey.test/sign-in", {
+test("Turnstile auth verification rejects invalid action and production hostname", async () => {
+  const request = new Request("https://agentkey.dev/sign-in");
+
+  await assert.rejects(
+    () =>
+      verifyTurnstileForAuth({
+        request,
+        token: "token",
+        env: { TURNSTILE_SECRET_KEY: "secret" } as never,
+        fetcher: async () =>
+          Response.json({
+            success: true,
+            action: "other_action",
+            hostname: "agentkey.dev",
+          }),
+      }),
+    (error) => error instanceof AppError && error.status === 400,
+  );
+
+  await assert.rejects(
+    () =>
+      verifyTurnstileForAuth({
+        request,
+        token: "token",
+        env: {
+          APP_ENV: "production",
+          TURNSTILE_SECRET_KEY: "secret",
+        } as never,
+        fetcher: async () =>
+          Response.json({
+            success: true,
+            action: "magic_link",
+            hostname: "attacker.example",
+          }),
+      }),
+    (error) => error instanceof AppError && error.status === 400,
+  );
+});
+
+test("Turnstile auth verification sends remote IP and accepts valid production tokens", async () => {
+  const request = new Request("https://agentkey.dev/sign-in", {
     headers: {
       "cf-connecting-ip": "203.0.113.8",
     },
@@ -176,7 +294,10 @@ test("Turnstile auth verification sends remote IP and accepts valid tokens", asy
   const passed = await verifyTurnstileForAuth({
     request,
     token: "token",
-    env: { TURNSTILE_SECRET_KEY: "secret" } as never,
+    env: {
+      APP_ENV: "production",
+      TURNSTILE_SECRET_KEY: "secret",
+    } as never,
     fetcher: async (_url, init) => {
       const body = init?.body;
 
@@ -185,11 +306,92 @@ test("Turnstile auth verification sends remote IP and accepts valid tokens", asy
       assert.equal(body.get("response"), "token");
       assert.equal(body.get("remoteip"), "203.0.113.8");
 
-      return Response.json({ success: true });
+      return Response.json({
+        success: true,
+        action: "magic_link",
+        hostname: "agentkey.dev",
+      });
     },
   });
 
   assert.equal(passed, true);
+});
+
+test("magic-link rate limits are keyed by source IP and normalized mailbox", async () => {
+  const request = new Request("https://agentkey.dev/sign-in", {
+    headers: {
+      "x-forwarded-for": "198.51.100.10, 198.51.100.11",
+    },
+  });
+  const subjects = getMagicLinkRateLimitSubjects(request, "USER@example.com");
+  const sameSubjects = getMagicLinkRateLimitSubjects(request, " user@EXAMPLE.com ");
+
+  assert.deepEqual(sameSubjects, subjects);
+  assert.match(subjects.ip, /^ip:[a-f0-9]{32}$/);
+  assert.match(subjects.email, /^email:[a-f0-9]{32}$/);
+
+  const { d1 } = createRateLimitD1();
+
+  await withMockRateLimitD1(d1, async () => {
+    for (let index = 0; index < 5; index += 1) {
+      await enforceMagicLinkRateLimits(request, "user@example.com");
+    }
+
+    await assert.rejects(
+      () => enforceMagicLinkRateLimits(request, "user@example.com"),
+      (error) =>
+        error instanceof RateLimitError &&
+        error.status === 429 &&
+        error.headers["X-RateLimit-Limit"] === "5",
+    );
+  });
+});
+
+test("magic-link source IP limiter blocks mailbox fan-out", async () => {
+  const request = new Request("https://agentkey.dev/sign-in", {
+    headers: {
+      "cf-connecting-ip": "203.0.113.20",
+    },
+  });
+  const { d1 } = createRateLimitD1();
+
+  await withMockRateLimitD1(d1, async () => {
+    for (let index = 0; index < 20; index += 1) {
+      await enforceMagicLinkRateLimits(request, `user-${index}@example.com`);
+    }
+
+    await assert.rejects(
+      () => enforceMagicLinkRateLimits(request, "another-user@example.com"),
+      (error) =>
+        error instanceof RateLimitError &&
+        error.status === 429 &&
+        error.headers["X-RateLimit-Limit"] === "20",
+    );
+  });
+});
+
+test("production callback requires a login token that passed Turnstile", () => {
+  assert.equal(
+    loginTokenHasRequiredVerification(
+      { turnstilePassed: false },
+      { APP_ENV: "production" } as never,
+    ),
+    false,
+  );
+  assert.equal(
+    loginTokenHasRequiredVerification(
+      { turnstilePassed: true },
+      { APP_ENV: "production" } as never,
+    ),
+    true,
+  );
+  assert.equal(
+    loginTokenHasRequiredVerification(
+      { turnstilePassed: false },
+      { APP_ENV: "development" } as never,
+    ),
+    true,
+  );
 });
 
 test("production magic-link email fails closed without Email Sending", async () => {
@@ -201,7 +403,7 @@ test("production magic-link email fails closed without Email Sending", async () 
           token: "secret-token",
           origin: "https://agentkey.dev",
         },
-        { APP_URL: "https://agentkey.dev" } as never,
+        { APP_ENV: "production", APP_URL: "https://agentkey.dev" } as never,
       ),
     (error) =>
       error instanceof AppError &&
@@ -384,4 +586,9 @@ test("organization selection updates only memberships owned by the user", async 
       (error) => error instanceof AppError && error.status === 404,
     );
   });
+});
+
+test("dashboard admin context only treats admin memberships as admins", () => {
+  assert.equal(isAdminMembership({ role: "admin" }), true);
+  assert.equal(isAdminMembership({ role: "member" }), false);
 });

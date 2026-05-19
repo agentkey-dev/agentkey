@@ -1,6 +1,6 @@
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { cookies } from "next/headers";
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 import { getCloudflareEnv, getDb } from "@/lib/db/client";
 import {
@@ -10,6 +10,7 @@ import {
   organizations,
   users,
 } from "@/lib/db/schema";
+import { isProductionAppEnvironment } from "@/lib/env";
 import { AppError } from "@/lib/http";
 
 export const SESSION_COOKIE_NAME = "agentkey_session";
@@ -176,6 +177,13 @@ export async function consumeLoginToken(token: string) {
   return loginToken;
 }
 
+export function loginTokenHasRequiredVerification(
+  loginToken: { turnstilePassed: boolean },
+  env: ReturnType<typeof getCloudflareEnv> = getCloudflareEnv(),
+) {
+  return !isProductionAppEnvironment(env) || loginToken.turnstilePassed === true;
+}
+
 export async function findOrCreateUser(email: string) {
   const db = getDb();
   const normalizedEmail = normalizeEmail(email);
@@ -242,13 +250,6 @@ export async function selectOrganizationForSession(input: {
     .where(eq(authSessions.id, input.sessionId));
 }
 
-export function safeCompareTokenHash(token: string, expectedHash: string) {
-  const actual = Buffer.from(hashToken(token), "hex");
-  const expected = Buffer.from(expectedHash, "hex");
-
-  return actual.length === expected.length && timingSafeEqual(actual, expected);
-}
-
 export async function sendMagicLinkEmail(input: {
   email: string;
   token: string;
@@ -292,10 +293,7 @@ export async function sendMagicLinkEmailWithEnv(
     return;
   }
 
-  const appUrl = typeof env.APP_URL === "string" ? env.APP_URL : input.origin;
-  const isProduction = appUrl === "https://agentkey.dev";
-
-  if (isProduction) {
+  if (isProductionAppEnvironment(env)) {
     throw new AppError(
       "Email service is not configured.",
       500,

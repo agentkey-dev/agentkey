@@ -55,6 +55,24 @@ test("rate-limit decisions expose tier headers and reset expired windows", () =>
 
   assert.equal(reset.count, 1);
   assert.equal(reset.headers["X-RateLimit-Remaining"], "119");
+
+  const magicLinkEmail = getRateLimitDecision(
+    {
+      count: 5,
+      windowStart: 10_000,
+      windowMs: 900_000,
+    },
+    "magicLinkEmail",
+    11_000,
+  );
+
+  assert.equal(magicLinkEmail.exceeded, true);
+  assert.deepEqual(magicLinkEmail.headers, {
+    "X-RateLimit-Limit": "5",
+    "X-RateLimit-Remaining": "0",
+    "X-RateLimit-Reset": "910000",
+    "X-RateLimit-Policy": "5;w=900",
+  });
 });
 
 test("rate limiting updates buckets with one atomic D1 upsert", async () => {

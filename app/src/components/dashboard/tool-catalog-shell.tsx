@@ -720,21 +720,12 @@ function ToolAgentsPanel({
   );
 
   const pendingRows: PendingAgentRow[] = useMemo(() => {
-    return tool.pendingAgentList
-      .map((entry) => {
-        const agent = agents.find((candidate) => candidate.id === entry.agentId);
-        const requestId = agent?.pendingTools.find(
-          (pendingTool) => pendingTool.toolId === tool.id,
-        )?.requestId;
-        if (!requestId) return null;
-        return {
-          agentId: entry.agentId,
-          agentName: entry.agentName,
-          requestId,
-        };
-      })
-      .filter((entry): entry is PendingAgentRow => entry !== null);
-  }, [tool.id, tool.pendingAgentList, agents]);
+    return tool.pendingAgentList.map((entry) => ({
+      agentId: entry.agentId,
+      agentName: entry.agentName,
+      requestId: entry.requestId,
+    }));
+  }, [tool.pendingAgentList]);
 
   const agentRows: AgentRow[] = useMemo(() => {
     const rows: AgentRow[] = agents
@@ -1289,6 +1280,37 @@ export function ToolCatalogShell({
           brandfetchClientId={brandfetchClientId}
           onCreated={(tool) => {
             setTools((current) => [tool, ...current]);
+            if (tool.pendingAgentList.length > 0) {
+              setAgents((current) =>
+                current.map((agent) => {
+                  const pending = tool.pendingAgentList.find(
+                    (entry) => entry.agentId === agent.id,
+                  );
+
+                  if (!pending) return agent;
+
+                  const pendingTools = agent.pendingTools.some(
+                    (entry) => entry.toolId === tool.id,
+                  )
+                    ? agent.pendingTools
+                    : [
+                        ...agent.pendingTools,
+                        {
+                          requestId: pending.requestId,
+                          toolId: tool.id,
+                          toolName: tool.name,
+                          toolCredentialMode: tool.credentialMode,
+                        },
+                      ];
+
+                  return {
+                    ...agent,
+                    toolsPending: pendingTools.map((entry) => entry.toolName),
+                    pendingTools,
+                  };
+                }),
+              );
+            }
             setQuickAddNudgeToolId(tool.id);
             openTool(tool.id);
 

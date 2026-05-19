@@ -6,7 +6,9 @@ export type RateLimitTier =
   | "credential"
   | "read"
   | "admin"
-  | "preauth";
+  | "preauth"
+  | "magicLinkIp"
+  | "magicLinkEmail";
 
 type RateLimitPolicy = { limit: number; windowMs: number; policy: string };
 type RateLimitBucketState = {
@@ -31,6 +33,8 @@ const policies: Record<RateLimitTier, RateLimitPolicy> = {
   read: { limit: 120, windowMs: 60 * 1000, policy: "120;w=60" },
   admin: { limit: 30, windowMs: 60 * 1000, policy: "30;w=60" },
   preauth: { limit: 600, windowMs: 60 * 1000, policy: "600;w=60" },
+  magicLinkIp: { limit: 20, windowMs: 15 * 60 * 1000, policy: "20;w=900" },
+  magicLinkEmail: { limit: 5, windowMs: 15 * 60 * 1000, policy: "5;w=900" },
 };
 
 function getBucketKey(agentId: string, tier: RateLimitTier) {

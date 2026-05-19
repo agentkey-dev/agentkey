@@ -5,6 +5,7 @@ import {
   createSession,
   findOrCreateUser,
   getFirstOrganizationForUser,
+  loginTokenHasRequiredVerification,
 } from "@/lib/auth/session";
 
 export async function GET(request: Request) {
@@ -19,6 +20,10 @@ export async function GET(request: Request) {
 
   if (!loginToken) {
     return NextResponse.redirect(new URL("/sign-in?error=expired", url));
+  }
+
+  if (!loginTokenHasRequiredVerification(loginToken)) {
+    return NextResponse.redirect(new URL("/sign-in?error=verification", url));
   }
 
   const user = await findOrCreateUser(loginToken.email);

@@ -16,6 +16,7 @@
     "crons": ["*/15 * * * *"]
   },
   "vars": {
+    "APP_ENV": "production",
     "APP_URL": "https://agentkey.dev",
     "AI_DRAFT_MODEL": "@cf/moonshotai/kimi-k2.6",
     "AUTH_EMAIL_FROM": "AgentKey <login@agentkey.dev>"

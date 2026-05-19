@@ -12,6 +12,10 @@ export type ToolAgentSummary = {
   agentName: string;
 };
 
+export type ToolPendingAgentSummary = ToolAgentSummary & {
+  requestId: string;
+};
+
 export type ToolCatalogItem = {
   id: string;
   configKey: string;
@@ -28,7 +32,7 @@ export type ToolCatalogItem = {
   approvedAgents: number;
   pendingAgents: number;
   approvedAgentList: ToolAgentSummary[];
-  pendingAgentList: ToolAgentSummary[];
+  pendingAgentList: ToolPendingAgentSummary[];
 };
 
 export type SuggestedToolSupporter = {

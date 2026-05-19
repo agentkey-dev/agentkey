@@ -54,18 +54,21 @@ test("agent grant summaries keep legacy names and structured tool references", (
 test("tool grant summaries expose counts and named agent lists", () => {
   const summary = summarizeToolGrantRows([
     {
+      requestId: "grant-1",
       toolId: "tool-1",
       agentId: "agent-1",
       agentName: "Bug Bot",
       status: "approved",
     },
     {
+      requestId: "grant-2",
       toolId: "tool-1",
       agentId: "agent-2",
       agentName: "Deploy Bot",
       status: "pending",
     },
     {
+      requestId: "grant-3",
       toolId: "tool-1",
       agentId: "agent-3",
       agentName: "Audit Bot",
@@ -77,7 +80,9 @@ test("tool grant summaries expose counts and named agent lists", () => {
     approved: 1,
     pending: 1,
     approvedAgentList: [{ agentId: "agent-1", agentName: "Bug Bot" }],
-    pendingAgentList: [{ agentId: "agent-2", agentName: "Deploy Bot" }],
+    pendingAgentList: [
+      { requestId: "grant-2", agentId: "agent-2", agentName: "Deploy Bot" },
+    ],
   });
 });
 

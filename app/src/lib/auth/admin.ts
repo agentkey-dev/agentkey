@@ -9,6 +9,10 @@ import {
   organizations,
 } from "@/lib/db/schema";
 
+export function isAdminMembership(membership: { role: string }) {
+  return membership.role === "admin";
+}
+
 export async function getAdminContext() {
   const session = await getCurrentSession();
 
@@ -20,15 +24,22 @@ export async function getAdminContext() {
   const memberships = await db
     .select({
       organization: organizations,
+      role: organizationMemberships.role,
     })
     .from(organizationMemberships)
     .innerJoin(
       organizations,
       eq(organizationMemberships.organizationId, organizations.id),
     )
-    .where(eq(organizationMemberships.userId, session.user.id));
+    .where(
+      and(
+        eq(organizationMemberships.userId, session.user.id),
+        eq(organizationMemberships.role, "admin"),
+      ),
+    );
+  const adminMemberships = memberships.filter(isAdminMembership);
 
-  if (memberships.length === 0) {
+  if (adminMemberships.length === 0) {
     return {
       kind: "missing-org" as const,
       userId: session.user.id,
@@ -37,10 +48,10 @@ export async function getAdminContext() {
   }
 
   const selected =
-    memberships.find(
+    adminMemberships.find(
       (membership) =>
         membership.organization.id === session.session.selectedOrganizationId,
-    ) ?? memberships[0];
+    ) ?? adminMemberships[0];
 
   if (selected.organization.id !== session.session.selectedOrganizationId) {
     await db
@@ -62,7 +73,7 @@ export async function getAdminContext() {
     userId: session.user.id,
     userEmail: session.user.email,
     organization: selected.organization,
-    organizations: memberships.map((membership) => membership.organization),
+    organizations: adminMemberships.map((membership) => membership.organization),
   };
 }
 

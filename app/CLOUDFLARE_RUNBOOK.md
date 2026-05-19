@@ -32,14 +32,35 @@ these production secrets should remain: `ENCRYPTION_KEY`,
 ## Email Sending Check
 
 Confirm `AUTH_EMAIL_FROM` is `AgentKey <login@agentkey.dev>` in
-`app/wrangler.jsonc`, then request a magic link from `/sign-in`. In production
-the app fails closed if the `EMAIL` binding is unavailable.
+`app/wrangler.jsonc`, then request a magic link from `/sign-in`. `APP_ENV` must
+be `production` in Cloudflare. In production the app fails closed if the `EMAIL`
+binding is unavailable.
 
 ## Turnstile Check
 
 Confirm `NEXT_PUBLIC_TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` are present as
 Worker secrets, then submit `/sign-in` with the Turnstile widget. A missing or
-invalid token must return a 400 response.
+invalid token must return a 400 response. Production Turnstile responses must
+have action `magic_link` and hostname `agentkey.dev`.
+
+## Auth Model
+
+AgentKey v1 has one organization role: `admin`. Every organization member is a
+full admin and can approve grants, rotate agent keys, create/delete tools, and
+manage credentials. Add RBAC before inviting users who should have read-only or
+limited access.
+
+Magic-link callbacks are GET requests that consume a one-time token. Some mail
+link scanners can prefetch those links and consume the token before the user
+clicks it. A prefetch-safe two-step confirmation flow is a deferred UX change.
+
+## D1 Mutation Semantics
+
+Drizzle's D1 transaction path emits `BEGIN`, which the deployed Worker runtime
+rejects. Production service mutations therefore run directly against the D1
+executor today. Multi-write admin flows are not fully atomic until they are
+rewritten around raw D1 `batch()`/SQL. Keep validation and audit preparation
+before security-sensitive status writes when touching these paths.
 
 ## Rollback By Worker Version
 

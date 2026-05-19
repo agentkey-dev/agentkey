@@ -90,6 +90,7 @@ export default async function SignInPage({
                 <div
                   className="cf-turnstile"
                   data-sitekey={turnstileSiteKey}
+                  data-action="magic_link"
                 />
               ) : null}
               <button

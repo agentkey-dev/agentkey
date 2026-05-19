@@ -49,7 +49,11 @@ import {
   type AgentCatalogPendingToolSummary,
   type AgentRecentActivityEvent,
 } from "@/lib/agent-catalog";
-import type { ToolCatalogItem, ToolHealthStatus } from "@/lib/tool-catalog";
+import type {
+  ToolCatalogItem,
+  ToolHealthStatus,
+  ToolPendingAgentSummary,
+} from "@/lib/tool-catalog";
 import { normalizeToolUrl } from "@/lib/tool-branding";
 import {
   createToolInstructionVersion,
@@ -115,7 +119,7 @@ type ToolAccessLists = {
   approved: number;
   pending: number;
   approvedAgentList: AgentSummary[];
-  pendingAgentList: AgentSummary[];
+  pendingAgentList: ToolPendingAgentSummary[];
 };
 
 export type PendingAccessRequestItem = {
@@ -308,6 +312,7 @@ export function collectRecentAgentAccessEvents(
 
 export function summarizeToolGrantRows(
   grantRows: Array<{
+    requestId: string;
     toolId: string;
     agentId: string;
     agentName: string;
@@ -335,6 +340,7 @@ export function summarizeToolGrantRows(
     if (grant.status === "pending") {
       bucket.pending += 1;
       bucket.pendingAgentList.push({
+        requestId: grant.requestId,
         agentId: grant.agentId,
         agentName: grant.agentName,
       });
@@ -344,6 +350,32 @@ export function summarizeToolGrantRows(
   }
 
   return summaryByTool;
+}
+
+async function getToolAccessLists(
+  db: DbScope,
+  organizationId: string,
+  toolId: string,
+) {
+  const grantRows = await db
+    .select({
+      requestId: accessGrants.id,
+      toolId: accessGrants.toolId,
+      agentId: agents.id,
+      agentName: agents.name,
+      status: accessGrants.status,
+    })
+    .from(accessGrants)
+    .innerJoin(agents, eq(accessGrants.agentId, agents.id))
+    .where(
+      and(
+        eq(accessGrants.organizationId, organizationId),
+        eq(accessGrants.toolId, toolId),
+      ),
+    )
+    .orderBy(asc(agents.name));
+
+  return summarizeToolGrantRows(grantRows).get(toolId);
 }
 
 async function listRecentAgentAccessEvents(
@@ -945,8 +977,6 @@ async function assignToolToAgentInDb(
     throw new AppError("Tool not found.", 404);
   }
 
-  assertApprovalInput(tool.credentialMode, credential);
-
   const existing = await db.query.accessGrants.findFirst({
     where: and(
       eq(accessGrants.organizationId, organizationId),
@@ -955,20 +985,15 @@ async function assignToolToAgentInDb(
     ),
   });
 
-  if (existing?.status === "pending") {
-    throw new AppError(
-      "This agent already has a pending request for this tool.",
-      409,
-    );
+  if (existing?.status === "approved") {
+    return existing;
   }
 
-  if (existing?.status === "approved") {
-    throw new AppError("This agent already has access to this tool.", 409);
-  }
+  assertApprovalInput(tool.credentialMode, credential);
 
   const grantValues = {
     status: "approved" as const,
-    reason: null,
+    reason: existing?.status === "pending" ? existing.reason : null,
     denialReason: null,
     credentialEncrypted:
       tool.credentialMode === "per_agent" && credential
@@ -1002,7 +1027,8 @@ async function assignToolToAgentInDb(
       actorType: "human",
       actorId: actor.actorId,
       actorLabel: actor.actorEmail,
-      action: "grant.assigned",
+      action:
+        existing?.status === "pending" ? "grant.approved" : "grant.assigned",
       targetType: "access_grant",
       targetId: grant.id,
       metadata: {
@@ -1120,6 +1146,7 @@ export async function listTools(organizationId: string) {
     listToolRows(organizationId),
     db
       .select({
+        requestId: accessGrants.id,
         toolId: accessGrants.toolId,
         agentId: agents.id,
         agentName: agents.name,
@@ -1251,7 +1278,13 @@ async function createToolInDb(
       : "tool_created",
   });
 
-  return toToolCatalogItem(createdWithVersion);
+  const accessSummary = await getToolAccessLists(
+    db,
+    organizationId,
+    createdWithVersion.id,
+  );
+
+  return toToolCatalogItem(createdWithVersion, accessSummary);
 }
 
 export async function createTool(
@@ -1861,19 +1894,40 @@ export async function approveRequest(
 
     assertApprovalInput(grant.toolCredentialMode, credential);
 
+    const now = new Date();
+    const credentialEncrypted =
+      grant.toolCredentialMode === "per_agent" && credential
+        ? encryptSecret(credential)
+        : null;
+
+    await appendAuditLog(
+      {
+        organizationId,
+        actorType: "human",
+        actorId: actor.actorId,
+        actorLabel: actor.actorEmail,
+        action: "grant.approved",
+        targetType: "access_grant",
+        targetId: requestId,
+        metadata: {
+          agentId: grant.agentId,
+          toolId: grant.toolId,
+          toolName: grant.toolName,
+        },
+      },
+      tx,
+    );
+
     const [updated] = await tx
       .update(accessGrants)
       .set({
         status: "approved",
         denialReason: null,
-        credentialEncrypted:
-          grant.toolCredentialMode === "per_agent" && credential
-            ? encryptSecret(credential)
-            : null,
+        credentialEncrypted,
         decidedByUserId: actor.actorId,
         decidedByEmail: actor.actorEmail,
-        decidedAt: new Date(),
-        updatedAt: new Date(),
+        decidedAt: now,
+        updatedAt: now,
       })
       .where(
         and(
@@ -1887,24 +1941,6 @@ export async function approveRequest(
     if (!updated) {
       throw new AppError("Only pending requests can be approved.", 409);
     }
-
-    await appendAuditLog(
-      {
-        organizationId,
-        actorType: "human",
-        actorId: actor.actorId,
-        actorLabel: actor.actorEmail,
-        action: "grant.approved",
-        targetType: "access_grant",
-        targetId: updated.id,
-        metadata: {
-          agentId: grant.agentId,
-          toolId: grant.toolId,
-          toolName: grant.toolName,
-        },
-      },
-      tx,
-    );
 
     return updated;
   });

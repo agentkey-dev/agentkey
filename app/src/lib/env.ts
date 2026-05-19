@@ -45,6 +45,19 @@ export function getOptionalAppUrl() {
   return getOptionalEnv("APP_URL");
 }
 
+export function getOptionalAppEnvironment() {
+  return getOptionalEnv("APP_ENV");
+}
+
+export function isProductionAppEnvironment(env?: { APP_ENV?: unknown }) {
+  const appEnv =
+    typeof env?.APP_ENV === "string"
+      ? env.APP_ENV
+      : getOptionalAppEnvironment();
+
+  return appEnv === "production";
+}
+
 export function getOptionalBrandfetchClientId() {
   return getOptionalEnv("NEXT_PUBLIC_BRANDFETCH_CLIENT_ID");
 }

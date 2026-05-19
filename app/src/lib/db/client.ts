@@ -8,6 +8,7 @@ export type DbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 export type DbScope = Db | DbTransaction;
 
 export type CloudflareEnv = Cloudflare.Env & {
+  APP_ENV?: string;
   AGENT_CORS_ORIGINS?: string;
   NEXT_PUBLIC_BRANDFETCH_CLIENT_ID?: string;
   NEXT_PUBLIC_TURNSTILE_SITE_KEY?: string;
@@ -57,8 +58,11 @@ export async function runDbMutation<T>(
 
   // Drizzle's D1 transaction path emits explicit BEGIN statements, which D1
   // rejects in the deployed Worker runtime. Run against the D1 executor
-  // directly in production; transaction-only test doubles still exercise the
-  // old rollback behavior in unit tests.
+  // directly in production. Multi-write service flows are not fully atomic on
+  // this path until they are rewritten around raw D1 batch/SQL, so callers must
+  // order validation and audit preparation before security-sensitive writes.
+  // Transaction-only test doubles still exercise the old rollback behavior in
+  // unit tests.
   if (canRunMutationDirectly(db)) {
     return callback(db);
   }
