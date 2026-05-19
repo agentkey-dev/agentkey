@@ -66,8 +66,8 @@ export default function PrivacyPage() {
 
           <p>
             When you sign up, we collect your email address, name, and
-            organization details through our authentication provider (Clerk).
-            This data is used to identify you, manage your account, and
+            organization details through AgentKey&apos;s native authentication
+            system. This data is used to identify you, manage your account, and
             communicate with you about the service.
           </p>
 
@@ -108,11 +108,10 @@ export default function PrivacyPage() {
           <h3>Usage analytics</h3>
 
           <p>
-            We use Vercel Analytics to collect anonymous, aggregated usage data
-            about how the marketing site and dashboard are used (page views,
-            navigation patterns). Vercel Analytics is privacy-friendly: it does
-            not use cookies for tracking, does not collect personal identifiers,
-            and does not track users across sites.
+            We use Cloudflare observability to collect operational telemetry
+            for availability, performance, and security monitoring. We do not
+            use third-party tracking cookies or cross-site advertising
+            analytics.
           </p>
 
           <h2>What we do not collect or do</h2>
@@ -180,24 +179,23 @@ export default function PrivacyPage() {
 
           <ul className="list-inside list-disc space-y-2 pl-4">
             <li>
-              <strong>Database</strong> — Neon PostgreSQL, hosted in AWS
-              us-east-1 (N. Virginia, United States)
+              <strong>Database</strong> — Cloudflare D1, hosted and replicated
+              on Cloudflare&apos;s infrastructure
             </li>
             <li>
-              <strong>Application hosting</strong> — Vercel, us-east-1 region
-              (United States)
+              <strong>Application hosting</strong> — Cloudflare Workers and
+              Workers Assets
             </li>
             <li>
-              <strong>Authentication</strong> — Clerk, hosted in the United
-              States
+              <strong>Authentication</strong> — native AgentKey email magic-link
+              sessions stored in D1
             </li>
           </ul>
 
           <p>
             Data is transferred from the EU to the United States under the
-            EU-U.S. Data Privacy Framework. Our subprocessors (Cloudflare,
-            Vercel, Neon, Clerk) participate in the framework and maintain
-            appropriate safeguards.
+            EU-U.S. Data Privacy Framework. Our subprocessors participate in the
+            framework or maintain appropriate safeguards.
           </p>
 
           <h3>How data is protected</h3>
@@ -325,39 +323,19 @@ export default function PrivacyPage() {
                 <tr className="border-b border-white/5">
                   <td className="py-3 pr-6 text-on-surface">Cloudflare</td>
                   <td className="py-3 pr-6">
-                    Edge protection (WAF, DDoS), DNS, email routing, TLS
-                    termination
+                    Application hosting, database, transactional email, AI
+                    model routing, edge protection, DNS, TLS termination, and
+                    operational observability
                   </td>
-                  <td className="py-3">Global (300+ cities)</td>
+                  <td className="py-3">Global</td>
                 </tr>
                 <tr className="border-b border-white/5">
-                  <td className="py-3 pr-6 text-on-surface">Vercel</td>
+                  <td className="py-3 pr-6 text-on-surface">Workers AI</td>
                   <td className="py-3 pr-6">
-                    Application hosting, serverless functions, analytics
+                    Setup guide generation and form drafting through Cloudflare
+                    Workers AI (tool names and URLs only, never credentials)
                   </td>
-                  <td className="py-3">United States</td>
-                </tr>
-                <tr className="border-b border-white/5">
-                  <td className="py-3 pr-6 text-on-surface">Neon</td>
-                  <td className="py-3 pr-6">PostgreSQL database</td>
-                  <td className="py-3">United States (us-east-1)</td>
-                </tr>
-                <tr className="border-b border-white/5">
-                  <td className="py-3 pr-6 text-on-surface">Clerk</td>
-                  <td className="py-3 pr-6">
-                    User authentication and organization management
-                  </td>
-                  <td className="py-3">United States</td>
-                </tr>
-                <tr className="border-b border-white/5">
-                  <td className="py-3 pr-6 text-on-surface">
-                    Vercel AI Gateway
-                  </td>
-                  <td className="py-3 pr-6">
-                    AI model routing for setup guide generation and form
-                    drafting (tool names and URLs only, never credentials)
-                  </td>
-                  <td className="py-3">United States</td>
+                  <td className="py-3">Cloudflare infrastructure</td>
                 </tr>
               </tbody>
             </table>
@@ -371,10 +349,8 @@ export default function PrivacyPage() {
           <h2>Cookies</h2>
 
           <p>
-            AgentKey uses only strictly necessary cookies for authentication
-            (session management via Clerk). We do not use cookies for tracking,
-            advertising, or analytics. Vercel Analytics operates without
-            cookies.
+            AgentKey uses only strictly necessary cookies for authentication.
+            We do not use cookies for tracking, advertising, or analytics.
           </p>
 
           <h2>Children</h2>

@@ -163,9 +163,8 @@ export default function SecurityPage() {
           <h3>Key management</h3>
 
           <p>
-            The 256-bit encryption key is provided as an environment variable
-            and managed by the hosting platform (Vercel on the managed service,
-            your infrastructure for self-hosted deployments). This is a
+            The 256-bit encryption key is provided as a Cloudflare Worker
+            secret in production. This is a
             single-key model — appropriate for the current threat model but
             without envelope encryption or HSM-backed key storage.
           </p>
@@ -371,23 +370,27 @@ export default function SecurityPage() {
                 </tr>
                 <tr className="border-b border-white/5">
                   <td className="py-3 pr-6 text-on-surface">Application</td>
-                  <td className="py-3 pr-6">Vercel (serverless)</td>
-                  <td className="py-3">us-east-1</td>
+                  <td className="py-3 pr-6">
+                    Cloudflare Workers and Workers Assets
+                  </td>
+                  <td className="py-3">Global</td>
                 </tr>
                 <tr className="border-b border-white/5">
                   <td className="py-3 pr-6 text-on-surface">Database</td>
-                  <td className="py-3 pr-6">Neon PostgreSQL</td>
-                  <td className="py-3">us-east-1</td>
+                  <td className="py-3 pr-6">Cloudflare D1</td>
+                  <td className="py-3">Cloudflare infrastructure</td>
                 </tr>
                 <tr className="border-b border-white/5">
                   <td className="py-3 pr-6 text-on-surface">Authentication</td>
-                  <td className="py-3 pr-6">Clerk</td>
-                  <td className="py-3">United States</td>
+                  <td className="py-3 pr-6">
+                    Native email magic-link sessions
+                  </td>
+                  <td className="py-3">Cloudflare D1</td>
                 </tr>
                 <tr className="border-b border-white/5">
                   <td className="py-3 pr-6 text-on-surface">AI features</td>
-                  <td className="py-3 pr-6">Vercel AI Gateway</td>
-                  <td className="py-3">United States</td>
+                  <td className="py-3 pr-6">Cloudflare Workers AI</td>
+                  <td className="py-3">Cloudflare infrastructure</td>
                 </tr>
               </tbody>
             </table>

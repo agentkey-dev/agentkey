@@ -34,13 +34,13 @@ test("credentials round-trip through AES encryption", () => {
 
 test("organization identity normalization trims and slugifies", () => {
   const normalized = normalizeOrganizationIdentity({
-    clerkOrgId: "org_123",
+    legacyProviderOrgId: "org_123",
     name: "  Acme Platform Team  ",
     slug: "",
   });
 
   assert.deepEqual(normalized, {
-    clerkOrgId: "org_123",
+    legacyClerkOrgId: "org_123",
     name: "Acme Platform Team",
     slug: "acme-platform-team",
   });

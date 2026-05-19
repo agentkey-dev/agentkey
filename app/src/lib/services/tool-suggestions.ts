@@ -1,15 +1,13 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 
 import { appendAuditLog } from "@/lib/audit";
 import {
   getToolSuggestionCooldownUntil,
   getToolSuggestionIdentity,
-  getToolSuggestionLockKeyParts,
-  getToolSuggestionLockTokens,
   toolMatchesSuggestionIdentity,
   toolSuggestionsMatch,
 } from "@/lib/core/tool-suggestions";
-import { getDb } from "@/lib/db/client";
+import { getDb, runDbMutation, type DbScope } from "@/lib/db/client";
 import {
   accessGrants,
   agents,
@@ -24,9 +22,7 @@ type Actor = {
   actorEmail: string;
 };
 
-type DbClient = ReturnType<typeof getDb>;
-type DbTx = Parameters<Parameters<DbClient["transaction"]>[0]>[0];
-type DbExecutor = DbClient | DbTx;
+type DbExecutor = DbScope;
 
 type SupporterSummary = {
   agentId: string;
@@ -212,13 +208,9 @@ async function acquireSuggestionLocks(
   organizationId: string,
   identity: ReturnType<typeof getToolSuggestionIdentity>,
 ) {
-  for (const token of getToolSuggestionLockTokens(organizationId, identity)) {
-    const [leftKey, rightKey] = getToolSuggestionLockKeyParts(token);
-
-    await db.execute(sql`
-      select pg_advisory_xact_lock(${leftKey}, ${rightKey})
-    `);
-  }
+  void db;
+  void organizationId;
+  void identity;
 }
 
 async function listSuggestionSupporters(
@@ -261,14 +253,13 @@ async function listSuggestionSupporters(
 }
 
 export async function suggestTool(input: SuggestToolInput): Promise<SuggestToolResult> {
-  const db = getDb();
   const identity = getToolSuggestionIdentity({
     name: input.name,
     url: input.url,
   });
   const now = new Date();
 
-  return db.transaction(async (tx) => {
+  return runDbMutation(async (tx) => {
     await acquireSuggestionLocks(tx, input.organizationId, identity);
 
     const existingTools = await listOrganizationTools(tx, input.organizationId);

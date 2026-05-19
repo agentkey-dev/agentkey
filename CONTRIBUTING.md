@@ -10,9 +10,9 @@ Thanks for your interest in contributing to AgentKey. We welcome bug reports, fe
 ```bash
 cd app
 cp .env.example .env.local
-# Fill in DATABASE_URL, ENCRYPTION_KEY, and Clerk keys
+# Fill in ENCRYPTION_KEY and Turnstile keys
 npm install
-npm run db:push
+npm run db:migrate:local
 npm run dev
 ```
 

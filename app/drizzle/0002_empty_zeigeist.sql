@@ -1,1 +1,0 @@
-ALTER TYPE "public"."audit_actor_type" ADD VALUE 'system';

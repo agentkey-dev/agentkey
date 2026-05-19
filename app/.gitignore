@@ -15,7 +15,9 @@
 
 # next.js
 /.next/
+/.open-next/
 /out/
+/.wrangler/
 
 # production
 /build
@@ -32,6 +34,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+.migration/
 
 # vercel
 .vercel
@@ -40,6 +43,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# clerk configuration (can include secrets)
-/.clerk/
 .env*.local
+
+# legacy local provider state
+/.clerk/

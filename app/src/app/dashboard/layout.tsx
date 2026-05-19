@@ -1,4 +1,3 @@
-import { OrganizationSwitcher, UserButton } from "@clerk/nextjs";
 import { count, eq, and } from "drizzle-orm";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -93,15 +92,43 @@ export default async function DashboardLayout({
         </aside>
         <div className="flex min-h-screen flex-col">
           <header className="flex items-center justify-end gap-3 border-b border-white/5 bg-surface/90 px-6 py-3 backdrop-blur">
-            <OrganizationSwitcher
-              hidePersonal
-              createOrganizationUrl="/onboarding"
-              organizationProfileUrl="/dashboard/organization"
-              afterCreateOrganizationUrl="/dashboard"
-              afterSelectOrganizationUrl="/dashboard"
-              afterLeaveOrganizationUrl="/onboarding"
-            />
-            <UserButton showName />
+            {context.organizations.length > 1 ? (
+              <form action="/api/auth/select-organization" method="post">
+                <select
+                  name="organizationId"
+                  defaultValue={context.organization.id}
+                  className="rounded-sm border border-white/10 bg-surface-container px-3 py-2 text-sm text-on-surface"
+                  aria-label="Select workspace"
+                >
+                  {context.organizations.map((organization) => (
+                    <option key={organization.id} value={organization.id}>
+                      {organization.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="submit"
+                  className="ml-2 rounded-sm border border-white/10 px-3 py-2 text-xs text-on-surface-variant transition-colors hover:text-on-surface"
+                >
+                  Switch
+                </button>
+              </form>
+            ) : (
+              <span className="rounded-sm border border-white/10 bg-surface-container px-3 py-2 text-sm text-on-surface">
+                {context.organization.name}
+              </span>
+            )}
+            <span className="text-sm text-on-surface-variant">
+              {context.userEmail}
+            </span>
+            <form action="/api/auth/sign-out" method="post">
+              <button
+                type="submit"
+                className="rounded-sm border border-white/10 px-3 py-2 text-xs text-on-surface-variant transition-colors hover:text-on-surface"
+              >
+                Sign out
+              </button>
+            </form>
           </header>
           <main className="flex-1 px-6 py-8">{children}</main>
         </div>

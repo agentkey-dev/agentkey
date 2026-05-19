@@ -1,83 +1,225 @@
+import { sql } from "drizzle-orm";
 import {
   index,
-  jsonb,
-  pgEnum,
-  pgTable,
+  integer,
+  sqliteTable,
   text,
-  timestamp,
   uniqueIndex,
-  uuid,
-} from "drizzle-orm/pg-core";
+} from "drizzle-orm/sqlite-core";
 
-export const agentStatusEnum = pgEnum("agent_status", ["active", "suspended"]);
-export const toolAuthTypeEnum = pgEnum("tool_auth_type", [
+const id = (name = "id") =>
+  text(name)
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID());
+
+const date = (name: string) => integer(name, { mode: "timestamp_ms" });
+
+const requiredDate = (name: string) =>
+  date(name)
+    .notNull()
+    .$defaultFn(() => new Date());
+
+const json = <T>(name: string) => text(name, { mode: "json" }).$type<T>();
+
+const enumValues = <const T extends readonly string[]>(values: T) => ({
+  enumValues: values,
+});
+
+export const agentStatusEnum = enumValues(["active", "suspended"] as const);
+export const toolAuthTypeEnum = enumValues([
   "api_key",
   "oauth_token",
   "bot_token",
   "other",
-]);
-export const toolCredentialModeEnum = pgEnum("tool_credential_mode", [
-  "shared",
-  "per_agent",
-]);
-export const accessGrantStatusEnum = pgEnum("access_grant_status", [
+] as const);
+export const toolCredentialModeEnum = enumValues(["shared", "per_agent"] as const);
+export const accessGrantStatusEnum = enumValues([
   "pending",
   "approved",
   "denied",
   "revoked",
-]);
-export const toolSuggestionStatusEnum = pgEnum("tool_suggestion_status", [
+] as const);
+export const toolSuggestionStatusEnum = enumValues([
   "pending",
   "dismissed",
   "accepted",
-]);
-export const toolInstructionVersionSourceEnum = pgEnum(
-  "tool_instruction_version_source",
-  ["manual", "suggestion_accept", "restore", "tool_create", "backfill"],
-);
-export const toolInstructionSuggestionStatusEnum = pgEnum(
-  "tool_instruction_suggestion_status",
-  ["pending", "dismissed", "accepted"],
-);
-export const auditActorTypeEnum = pgEnum("audit_actor_type", [
+] as const);
+export const toolInstructionVersionSourceEnum = enumValues([
+  "manual",
+  "suggestion_accept",
+  "restore",
+  "tool_create",
+  "backfill",
+] as const);
+export const toolInstructionSuggestionStatusEnum = enumValues([
+  "pending",
+  "dismissed",
+  "accepted",
+] as const);
+export const auditActorTypeEnum = enumValues([
   "agent",
   "human",
   "system",
-]);
-export const notificationDeliveryStatusEnum = pgEnum(
-  "notification_delivery_status",
-  ["success", "failed"],
-);
+] as const);
+export const notificationDeliveryStatusEnum = enumValues([
+  "success",
+  "failed",
+] as const);
 
-export const organizations = pgTable(
-  "organizations",
+export const users = sqliteTable(
+  "users",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    clerkOrgId: text("clerk_org_id").notNull(),
-    name: text("name").notNull(),
-    slug: text("slug"),
-    onboardingDismissedAt: timestamp("onboarding_dismissed_at", {
-      withTimezone: true,
-    }),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    id: id(),
+    email: text("email").notNull(),
+    name: text("name"),
+    legacyClerkUserId: text("legacy_clerk_user_id"),
+    lastSignedInAt: date("last_signed_in_at"),
+    createdAt: requiredDate("created_at"),
+    updatedAt: requiredDate("updated_at"),
   },
   (table) => ({
-    clerkOrgIdIndex: uniqueIndex("organizations_clerk_org_id_idx").on(
-      table.clerkOrgId,
+    emailIndex: uniqueIndex("users_email_idx").on(table.email),
+    legacyClerkUserIdIndex: uniqueIndex("users_legacy_clerk_user_id_idx").on(
+      table.legacyClerkUserId,
     ),
   }),
 );
 
-export const agents = pgTable(
+export const organizations = sqliteTable(
+  "organizations",
+  {
+    id: id(),
+    legacyClerkOrgId: text("legacy_clerk_org_id"),
+    name: text("name").notNull(),
+    slug: text("slug"),
+    onboardingDismissedAt: date("onboarding_dismissed_at"),
+    createdAt: requiredDate("created_at"),
+    updatedAt: requiredDate("updated_at"),
+  },
+  (table) => ({
+    legacyClerkOrgIdIndex: uniqueIndex("organizations_legacy_clerk_org_id_idx").on(
+      table.legacyClerkOrgId,
+    ),
+  }),
+);
+
+export const organizationMemberships = sqliteTable(
+  "organization_memberships",
+  {
+    id: id(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: text("role", { enum: ["admin"] }).notNull().default("admin"),
+    legacyClerkMembershipId: text("legacy_clerk_membership_id"),
+    createdAt: requiredDate("created_at"),
+    updatedAt: requiredDate("updated_at"),
+  },
+  (table) => ({
+    organizationIndex: index("organization_memberships_organization_id_idx").on(
+      table.organizationId,
+    ),
+    userIndex: index("organization_memberships_user_id_idx").on(table.userId),
+    organizationUserIndex: uniqueIndex(
+      "organization_memberships_organization_user_idx",
+    ).on(table.organizationId, table.userId),
+  }),
+);
+
+export const organizationInvites = sqliteTable(
+  "organization_invites",
+  {
+    id: id(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    invitedByUserId: text("invited_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    acceptedAt: date("accepted_at"),
+    createdAt: requiredDate("created_at"),
+    updatedAt: requiredDate("updated_at"),
+  },
+  (table) => ({
+    organizationEmailIndex: uniqueIndex("organization_invites_org_email_idx").on(
+      table.organizationId,
+      table.email,
+    ),
+  }),
+);
+
+export const authSessions = sqliteTable(
+  "auth_sessions",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    selectedOrganizationId: text("selected_organization_id").references(
+      () => organizations.id,
+      { onDelete: "set null" },
+    ),
+    expiresAt: date("expires_at").notNull(),
+    revokedAt: date("revoked_at"),
+    createdAt: requiredDate("created_at"),
+    updatedAt: requiredDate("updated_at"),
+  },
+  (table) => ({
+    tokenHashIndex: uniqueIndex("auth_sessions_token_hash_idx").on(
+      table.tokenHash,
+    ),
+    userIndex: index("auth_sessions_user_id_idx").on(table.userId),
+  }),
+);
+
+export const authLoginTokens = sqliteTable(
+  "auth_login_tokens",
+  {
+    id: id(),
+    email: text("email").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    turnstilePassed: integer("turnstile_passed", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    expiresAt: date("expires_at").notNull(),
+    consumedAt: date("consumed_at"),
+    createdAt: requiredDate("created_at"),
+  },
+  (table) => ({
+    tokenHashIndex: uniqueIndex("auth_login_tokens_token_hash_idx").on(
+      table.tokenHash,
+    ),
+    emailCreatedIndex: index("auth_login_tokens_email_created_idx").on(
+      table.email,
+      table.createdAt,
+    ),
+  }),
+);
+
+export const rateLimitBuckets = sqliteTable(
+  "rate_limit_buckets",
+  {
+    key: text("key").primaryKey(),
+    count: integer("count").notNull(),
+    windowStart: integer("window_start").notNull(),
+    windowMs: integer("window_ms").notNull(),
+    updatedAt: requiredDate("updated_at"),
+  },
+  (table) => ({
+    updatedAtIndex: index("rate_limit_buckets_updated_at_idx").on(table.updatedAt),
+  }),
+);
+
+export const agents = sqliteTable(
   "agents",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    organizationId: uuid("organization_id")
+    id: id(),
+    organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
@@ -85,13 +227,11 @@ export const agents = pgTable(
     apiKeyHash: text("api_key_hash").notNull(),
     createdByUserId: text("created_by_user_id").notNull(),
     createdByEmail: text("created_by_email").notNull(),
-    status: agentStatusEnum("status").notNull().default("active"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    status: text("status", { enum: agentStatusEnum.enumValues })
+      .notNull()
+      .default("active"),
+    createdAt: requiredDate("created_at"),
+    updatedAt: requiredDate("updated_at"),
   },
   (table) => ({
     organizationIndex: index("agents_organization_id_idx").on(
@@ -101,36 +241,30 @@ export const agents = pgTable(
   }),
 );
 
-export const tools = pgTable(
+export const tools = sqliteTable(
   "tools",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    organizationId: uuid("organization_id")
+    id: id(),
+    organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     configKey: text("config_key").notNull(),
     name: text("name").notNull(),
     description: text("description").notNull().default(""),
     url: text("url"),
-    authType: toolAuthTypeEnum("auth_type").notNull(),
-    credentialMode: toolCredentialModeEnum("credential_mode").notNull(),
+    authType: text("auth_type", { enum: toolAuthTypeEnum.enumValues }).notNull(),
+    credentialMode: text("credential_mode", {
+      enum: toolCredentialModeEnum.enumValues,
+    }).notNull(),
     credentialEncrypted: text("credential_encrypted"),
-    credentialLastRotatedAt: timestamp("credential_last_rotated_at", {
-      withTimezone: true,
-    }),
-    credentialExpiresAt: timestamp("credential_expires_at", {
-      withTimezone: true,
-    }),
+    credentialLastRotatedAt: date("credential_last_rotated_at"),
+    credentialExpiresAt: date("credential_expires_at"),
     instructions: text("instructions"),
-    currentInstructionVersionId: uuid("current_instruction_version_id"),
+    currentInstructionVersionId: text("current_instruction_version_id"),
     addedByUserId: text("added_by_user_id").notNull(),
     addedByEmail: text("added_by_email").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    createdAt: requiredDate("created_at"),
+    updatedAt: requiredDate("updated_at"),
   },
   (table) => ({
     organizationIndex: index("tools_organization_id_idx").on(table.organizationId),
@@ -141,23 +275,23 @@ export const tools = pgTable(
   }),
 );
 
-export const toolInstructionVersions = pgTable(
+export const toolInstructionVersions = sqliteTable(
   "tool_instruction_versions",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    organizationId: uuid("organization_id")
+    id: id(),
+    organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    toolId: uuid("tool_id")
+    toolId: text("tool_id")
       .notNull()
       .references(() => tools.id, { onDelete: "cascade" }),
     instructions: text("instructions").notNull(),
-    source: toolInstructionVersionSourceEnum("source").notNull(),
+    source: text("source", {
+      enum: toolInstructionVersionSourceEnum.enumValues,
+    }).notNull(),
     createdByUserId: text("created_by_user_id").notNull(),
     createdByEmail: text("created_by_email").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    createdAt: requiredDate("created_at"),
   },
   (table) => ({
     organizationIndex: index("tool_instruction_versions_organization_id_idx").on(
@@ -171,35 +305,31 @@ export const toolInstructionVersions = pgTable(
   }),
 );
 
-export const accessGrants = pgTable(
+export const accessGrants = sqliteTable(
   "access_grants",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    organizationId: uuid("organization_id")
+    id: id(),
+    organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    agentId: uuid("agent_id")
+    agentId: text("agent_id")
       .notNull()
       .references(() => agents.id, { onDelete: "cascade" }),
-    toolId: uuid("tool_id")
+    toolId: text("tool_id")
       .notNull()
       .references(() => tools.id, { onDelete: "cascade" }),
-    status: accessGrantStatusEnum("status").notNull().default("pending"),
+    status: text("status", { enum: accessGrantStatusEnum.enumValues })
+      .notNull()
+      .default("pending"),
     reason: text("reason"),
     denialReason: text("denial_reason"),
     credentialEncrypted: text("credential_encrypted"),
-    requestedAt: timestamp("requested_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    requestedAt: requiredDate("requested_at"),
     decidedByUserId: text("decided_by_user_id"),
     decidedByEmail: text("decided_by_email"),
-    decidedAt: timestamp("decided_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    decidedAt: date("decided_at"),
+    createdAt: requiredDate("created_at"),
+    updatedAt: requiredDate("updated_at"),
   },
   (table) => ({
     organizationIndex: index("access_grants_organization_id_idx").on(
@@ -214,38 +344,36 @@ export const accessGrants = pgTable(
   }),
 );
 
-export const toolInstructionSuggestions = pgTable(
+export const toolInstructionSuggestions = sqliteTable(
   "tool_instruction_suggestions",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    organizationId: uuid("organization_id")
+    id: id(),
+    organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    toolId: uuid("tool_id")
+    toolId: text("tool_id")
       .notNull()
       .references(() => tools.id, { onDelete: "cascade" }),
-    baseVersionId: uuid("base_version_id")
+    baseVersionId: text("base_version_id")
       .notNull()
       .references(() => toolInstructionVersions.id, { onDelete: "cascade" }),
     learned: text("learned").notNull(),
     normalizedLearned: text("normalized_learned").notNull(),
-    status: toolInstructionSuggestionStatusEnum("status")
+    status: text("status", {
+      enum: toolInstructionSuggestionStatusEnum.enumValues,
+    })
       .notNull()
       .default("pending"),
     dismissalReason: text("dismissal_reason"),
-    acceptedVersionId: uuid("accepted_version_id").references(
+    acceptedVersionId: text("accepted_version_id").references(
       () => toolInstructionVersions.id,
       { onDelete: "set null" },
     ),
     decidedByUserId: text("decided_by_user_id"),
     decidedByEmail: text("decided_by_email"),
-    decidedAt: timestamp("decided_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    decidedAt: date("decided_at"),
+    createdAt: requiredDate("created_at"),
+    updatedAt: requiredDate("updated_at"),
   },
   (table) => ({
     organizationIndex: index(
@@ -257,9 +385,7 @@ export const toolInstructionSuggestions = pgTable(
     toolBaseVersionIndex: index(
       "tool_instruction_suggestions_tool_base_version_idx",
     ).on(table.toolId, table.baseVersionId),
-    dedupeIndex: uniqueIndex(
-      "tool_instruction_suggestions_dedupe_idx",
-    ).on(
+    dedupeIndex: uniqueIndex("tool_instruction_suggestions_dedupe_idx").on(
       table.organizationId,
       table.toolId,
       table.baseVersionId,
@@ -268,32 +394,24 @@ export const toolInstructionSuggestions = pgTable(
   }),
 );
 
-export const toolInstructionSuggestionAgents = pgTable(
+export const toolInstructionSuggestionAgents = sqliteTable(
   "tool_instruction_suggestion_agents",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    organizationId: uuid("organization_id")
+    id: id(),
+    organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    suggestionId: uuid("suggestion_id")
+    suggestionId: text("suggestion_id")
       .notNull()
       .references(() => toolInstructionSuggestions.id, { onDelete: "cascade" }),
-    agentId: uuid("agent_id")
+    agentId: text("agent_id")
       .notNull()
       .references(() => agents.id, { onDelete: "cascade" }),
     latestWhy: text("latest_why").notNull(),
-    firstRequestedAt: timestamp("first_requested_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    lastRequestedAt: timestamp("last_requested_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    firstRequestedAt: requiredDate("first_requested_at"),
+    lastRequestedAt: requiredDate("last_requested_at"),
+    createdAt: requiredDate("created_at"),
+    updatedAt: requiredDate("updated_at"),
   },
   (table) => ({
     organizationIndex: index(
@@ -311,74 +429,67 @@ export const toolInstructionSuggestionAgents = pgTable(
   }),
 );
 
-export const toolSuggestions = pgTable(
+export const toolSuggestions = sqliteTable(
   "tool_suggestions",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    organizationId: uuid("organization_id")
+    id: id(),
+    organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     normalizedName: text("normalized_name").notNull(),
     url: text("url"),
     normalizedDomain: text("normalized_domain"),
-    status: toolSuggestionStatusEnum("status").notNull().default("pending"),
-    dismissedUntil: timestamp("dismissed_until", { withTimezone: true }),
-    convertedToolId: uuid("converted_tool_id").references(() => tools.id, {
+    status: text("status", { enum: toolSuggestionStatusEnum.enumValues })
+      .notNull()
+      .default("pending"),
+    dismissedUntil: date("dismissed_until"),
+    convertedToolId: text("converted_tool_id").references(() => tools.id, {
       onDelete: "set null",
     }),
     decidedByUserId: text("decided_by_user_id"),
     decidedByEmail: text("decided_by_email"),
-    decidedAt: timestamp("decided_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    decidedAt: date("decided_at"),
+    createdAt: requiredDate("created_at"),
+    updatedAt: requiredDate("updated_at"),
   },
   (table) => ({
     organizationIndex: index("tool_suggestions_organization_id_idx").on(
       table.organizationId,
     ),
-    organizationStatusIndex: index(
-      "tool_suggestions_organization_status_idx",
-    ).on(table.organizationId, table.status),
-    organizationDomainIndex: index(
-      "tool_suggestions_organization_domain_idx",
-    ).on(table.organizationId, table.normalizedDomain),
-    organizationNameIndex: index(
-      "tool_suggestions_organization_name_idx",
-    ).on(table.organizationId, table.normalizedName),
+    organizationStatusIndex: index("tool_suggestions_organization_status_idx").on(
+      table.organizationId,
+      table.status,
+    ),
+    organizationDomainIndex: index("tool_suggestions_organization_domain_idx").on(
+      table.organizationId,
+      table.normalizedDomain,
+    ),
+    organizationNameIndex: index("tool_suggestions_organization_name_idx").on(
+      table.organizationId,
+      table.normalizedName,
+    ),
   }),
 );
 
-export const toolSuggestionAgents = pgTable(
+export const toolSuggestionAgents = sqliteTable(
   "tool_suggestion_agents",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    organizationId: uuid("organization_id")
+    id: id(),
+    organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    suggestionId: uuid("suggestion_id")
+    suggestionId: text("suggestion_id")
       .notNull()
       .references(() => toolSuggestions.id, { onDelete: "cascade" }),
-    agentId: uuid("agent_id")
+    agentId: text("agent_id")
       .notNull()
       .references(() => agents.id, { onDelete: "cascade" }),
     latestReason: text("latest_reason").notNull(),
-    firstRequestedAt: timestamp("first_requested_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    lastRequestedAt: timestamp("last_requested_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    firstRequestedAt: requiredDate("first_requested_at"),
+    lastRequestedAt: requiredDate("last_requested_at"),
+    createdAt: requiredDate("created_at"),
+    updatedAt: requiredDate("updated_at"),
   },
   (table) => ({
     organizationIndex: index("tool_suggestion_agents_organization_id_idx").on(
@@ -394,23 +505,21 @@ export const toolSuggestionAgents = pgTable(
   }),
 );
 
-export const auditLog = pgTable(
+export const auditLog = sqliteTable(
   "audit_log",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    organizationId: uuid("organization_id")
+    id: id(),
+    organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    actorType: auditActorTypeEnum("actor_type").notNull(),
+    actorType: text("actor_type", { enum: auditActorTypeEnum.enumValues }).notNull(),
     actorId: text("actor_id").notNull(),
     actorLabel: text("actor_label").notNull(),
     action: text("action").notNull(),
     targetType: text("target_type"),
     targetId: text("target_id"),
-    metadata: jsonb("metadata").$type<Record<string, unknown> | null>(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    metadata: json<Record<string, unknown> | null>("metadata"),
+    createdAt: requiredDate("created_at"),
   },
   (table) => ({
     organizationCreatedIndex: index("audit_log_organization_created_idx").on(
@@ -422,36 +531,28 @@ export const auditLog = pgTable(
   }),
 );
 
-export const organizationNotificationSettings = pgTable(
+export const organizationNotificationSettings = sqliteTable(
   "organization_notification_settings",
   {
-    organizationId: uuid("organization_id")
+    organizationId: text("organization_id")
       .primaryKey()
       .references(() => organizations.id, { onDelete: "cascade" }),
     slackWebhookEncrypted: text("slack_webhook_encrypted"),
     discordWebhookEncrypted: text("discord_webhook_encrypted"),
-    lastSlackDeliveryStatus: notificationDeliveryStatusEnum(
-      "last_slack_delivery_status",
-    ),
-    lastSlackDeliveryAt: timestamp("last_slack_delivery_at", {
-      withTimezone: true,
+    lastSlackDeliveryStatus: text("last_slack_delivery_status", {
+      enum: notificationDeliveryStatusEnum.enumValues,
     }),
+    lastSlackDeliveryAt: date("last_slack_delivery_at"),
     lastSlackError: text("last_slack_error"),
-    lastDiscordDeliveryStatus: notificationDeliveryStatusEnum(
-      "last_discord_delivery_status",
-    ),
-    lastDiscordDeliveryAt: timestamp("last_discord_delivery_at", {
-      withTimezone: true,
+    lastDiscordDeliveryStatus: text("last_discord_delivery_status", {
+      enum: notificationDeliveryStatusEnum.enumValues,
     }),
+    lastDiscordDeliveryAt: date("last_discord_delivery_at"),
     lastDiscordError: text("last_discord_error"),
     updatedByUserId: text("updated_by_user_id").notNull(),
     updatedByEmail: text("updated_by_email").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    createdAt: requiredDate("created_at"),
+    updatedAt: requiredDate("updated_at"),
   },
   (table) => ({
     updatedAtIndex: index("organization_notification_settings_updated_at_idx").on(
@@ -459,6 +560,8 @@ export const organizationNotificationSettings = pgTable(
     ),
   }),
 );
+
+export const nowSql = sql`(unixepoch() * 1000)`;
 
 export type AgentStatus = (typeof agentStatusEnum.enumValues)[number];
 export type ToolAuthType = (typeof toolAuthTypeEnum.enumValues)[number];

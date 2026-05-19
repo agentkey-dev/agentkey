@@ -1,6 +1,7 @@
-import { gateway, streamText } from "ai";
+import { streamText } from "ai";
 import { z } from "zod";
 
+import { getWorkersAiModel } from "@/lib/ai/workers";
 import { getAdminContext } from "@/lib/auth/admin";
 import {
   AGENTKEY_CONTEXT,
@@ -10,7 +11,7 @@ import {
   toolAuthTypeSchema,
   wrapUntrustedAgentContext,
 } from "@/lib/core/tool-drafting";
-import { getOptionalAiDraftModel, isAiDraftingEnabled } from "@/lib/env";
+import { isAiDraftingEnabled } from "@/lib/env";
 import {
   AI_JSON_BODY_LIMIT,
   handleRouteError,
@@ -61,7 +62,7 @@ export async function POST(request: Request) {
       return jsonError(
         "AI drafting is not available in this environment.",
         503,
-        "Deploy on Vercel with AI Gateway access to use this feature.",
+        "Deploy on Cloudflare with the Workers AI binding to use this feature.",
       );
     }
 
@@ -76,7 +77,7 @@ export async function POST(request: Request) {
     const toolUrl = normalizeOptionalDocsUrl(parsed.url);
 
     const result = streamText({
-      model: gateway(getOptionalAiDraftModel() ?? "openai/gpt-5.4"),
+      model: getWorkersAiModel(),
       system: `${AGENTKEY_CONTEXT}
 
 Write a concise technical reference (under 20 lines) for an AI coding agent that just received a credential for this tool. This text is sent to the agent alongside the credential when it calls GET /api/tools/{id}/credentials.

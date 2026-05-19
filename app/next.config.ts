@@ -1,9 +1,39 @@
 import type { NextConfig } from "next";
+import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
 
-// Content-Security-Policy is set per-request by the middleware in src/proxy.ts
-// so that each HTML response carries a fresh script nonce + 'strict-dynamic'.
-// The remaining security headers are static and apply to every response.
+initOpenNextCloudflareForDev();
+
+const isDev = process.env.NODE_ENV !== "production";
+
+const scriptSrc = [
+  "'self'",
+  "https://challenges.cloudflare.com",
+  "https://maps.googleapis.com",
+  "https://js.stripe.com",
+  "https://*.js.stripe.com",
+  "'unsafe-inline'",
+  isDev ? "'unsafe-eval'" : null,
+]
+  .filter(Boolean)
+  .join(" ");
+
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  `script-src ${scriptSrc}`,
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https://*.brandfetch.io https://cdn.brandfetch.io",
+  "font-src 'self' data:",
+  "connect-src 'self' https://api.stripe.com https://maps.googleapis.com https://api.brandfetch.io",
+  "frame-src 'self' https://challenges.cloudflare.com https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com https://www.loom.com",
+  "worker-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join("; ");
+
 const securityHeaders = [
+  { key: "Content-Security-Policy", value: contentSecurityPolicy },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
@@ -18,10 +48,6 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  turbopack: {
-    // Keep dev-mode file watching scoped to the Next app instead of the repo root.
-    root: __dirname,
-  },
   headers: async () => [
     {
       source: "/(.*)",

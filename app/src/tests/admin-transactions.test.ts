@@ -64,9 +64,6 @@ function createApproveTx(state: { grant: GrantState }, failAuditInsert: boolean)
           return this;
         },
         limit() {
-          return this;
-        },
-        for() {
           return Promise.resolve([
             {
               id: state.grant.id,
@@ -719,6 +716,47 @@ test("approveRequest rolls back the grant update if the audit insert fails", asy
   assert.equal(state.grant.status, "pending");
   assert.equal(state.grant.credentialEncrypted, null);
   assert.equal(state.grant.decidedByUserId, null);
+});
+
+test("approveRequest runs on the direct D1 executor without explicit transactions", async () => {
+  const state = {
+    grant: {
+      id: "grant-1",
+      organizationId: "org-1",
+      agentId: "agent-1",
+      toolId: "tool-1",
+      toolName: "Discord",
+      status: "pending" as const,
+      toolCredentialMode: "per_agent" as const,
+      denialReason: null,
+      reason: "Need to manage alerts",
+      credentialEncrypted: null,
+      decidedByUserId: null,
+      decidedByEmail: null,
+      decidedAt: null,
+      requestedAt: new Date("2026-03-31T09:00:00.000Z"),
+      createdAt: new Date("2026-03-31T09:00:00.000Z"),
+      updatedAt: new Date("2026-03-31T10:00:00.000Z"),
+    },
+  };
+  const db = {
+    ...createApproveTx(state, false),
+    transaction: async () => {
+      throw new Error("transaction should not be called");
+    },
+  };
+
+  const updated = (await withMockDb(db, () =>
+    approveRequest("org-1", "grant-1", "discord_bot_token", {
+      actorId: "user-1",
+      actorEmail: "admin@example.com",
+    }),
+  )) as GrantState;
+
+  assert.equal(updated.status, "approved");
+  assert.equal(state.grant.status, "approved");
+  assert.equal(decryptSecret(state.grant.credentialEncrypted ?? ""), "discord_bot_token");
+  assert.equal(state.grant.decidedByUserId, "user-1");
 });
 
 test("assignToolToAgent rolls back a new grant if the audit insert fails", async () => {

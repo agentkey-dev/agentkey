@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
-import { auth } from "@clerk/nextjs/server";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 
 import { HeroTerminal } from "@/components/hero-terminal";
 import { getAppOrigin } from "@/lib/origin";
@@ -12,11 +10,11 @@ const homeDescription =
 const homeFaqs = [
   {
     q: "What types of AI agents does AgentKey work with?",
-    a: "Any agent that can make HTTP requests. OpenClaw, Claude Code, Cursor, Cline, the OpenAI Agents SDK, LangChain, the Vercel AI SDK, your own custom stack — if it can call a REST API, it works with AgentKey. No special SDK or framework required.",
+    a: "Any agent that can make HTTP requests. OpenClaw, Claude Code, Cursor, Cline, the OpenAI Agents SDK, LangChain, the AI SDK, your own custom stack — if it can call a REST API, it works with AgentKey. No special SDK or framework required.",
   },
   {
     q: 'What counts as a "tool"?',
-    a: "Any SaaS or external service your agents need credentials for. GitHub, Linear, Notion, Slack, Discord, Stripe, Vercel, Datadog — anything with an API key, OAuth token, or bot token.",
+    a: "Any SaaS or external service your agents need credentials for. GitHub, Linear, Notion, Slack, Discord, Stripe, Cloudflare, Datadog — anything with an API key, OAuth token, or bot token.",
   },
   {
     q: "How do agents know how to use the API?",
@@ -40,11 +38,11 @@ const homeFaqs = [
   },
   {
     q: "Is there an approval workflow?",
-    a: "Yes. Every access request and tool suggestion requires human approval. AgentKey uses Clerk organizations — you can invite team members to your organization so multiple people can review and approve requests.",
+    a: "Yes. Every access request and tool suggestion requires human approval. AgentKey organizations let multiple people review and approve requests.",
   },
   {
     q: "I want to self-host. How hard is it?",
-    a: "About five minutes on Vercel. All three dependencies — Neon (Postgres), Upstash (Redis), and Clerk (auth) — are Vercel Marketplace integrations. Click Deploy, approve the three integrations from your Vercel dashboard, and their env vars are auto-provisioned into your project. Free tiers cover everything a team needs. No vendor lock-in: the code is source-available and you can swap any piece later.",
+    a: "AgentKey runs as a Cloudflare Worker with Workers Assets, D1, Workers AI, Email Service, and Turnstile. Configure the bindings in wrangler.jsonc, set the required secrets, run the D1 migrations, and deploy.",
   },
   {
     q: "Is this overkill for a 3-person team?",
@@ -72,7 +70,6 @@ export const metadata: Metadata = {
 };
 
 export default async function Home() {
-  const { userId, orgId } = await auth();
   const origin = getAppOrigin();
   const structuredData = {
     "@context": "https://schema.org",
@@ -103,14 +100,6 @@ export default async function Home() {
     ],
   };
 
-  if (userId && orgId) {
-    redirect("/dashboard");
-  }
-
-  if (userId) {
-    redirect("/onboarding");
-  }
-
   return (
     <>
       <script
@@ -127,7 +116,7 @@ export default async function Home() {
         <AgentInstructions />
         <DashboardPreview />
         <WorksWith />
-        <BuiltOnVercel />
+        <BuiltOnCloudflare />
         <Security />
         <FAQ />
         <CTA />
@@ -218,7 +207,7 @@ function Hero() {
           </p>
           <div className="mb-10 flex flex-wrap gap-x-4 gap-y-2 text-sm font-semibold">
             <span className="text-on-surface">Self-hostable.</span>
-            <span className="text-on-surface-variant">Works with OpenClaw, Claude Code, Cursor, the OpenAI &amp; Vercel AI SDKs — any HTTP-capable agent.</span>
+            <span className="text-on-surface-variant">Works with OpenClaw, Claude Code, Cursor, OpenAI Agents, LangChain, and any HTTP-capable agent.</span>
           </div>
           <div className="flex flex-wrap gap-4">
             <Link
@@ -497,7 +486,7 @@ function DashboardPreview() {
     {
       kind: "access_request" as const,
       agent: "Deploy-Bot",
-      tool: "Vercel",
+      tool: "Cloudflare",
       reason: '"Trigger production deployments for the marketing site"',
     },
     {
@@ -857,14 +846,16 @@ It contains company-specific context for this tool.`;
   );
 }
 
-/* ─── Built on Vercel ─── */
-function BuiltOnVercel() {
+/* ─── Built on Cloudflare ─── */
+function BuiltOnCloudflare() {
   const primitives = [
-    "Vercel Marketplace",
-    "AI Gateway",
-    "Edge Network",
-    "Speed Insights",
-    "Web Analytics",
+    "Workers",
+    "Workers Assets",
+    "D1",
+    "Workers AI",
+    "Email Service",
+    "Turnstile",
+    "Observability",
   ];
   return (
     <section className="bg-surface px-6 py-16">
@@ -872,23 +863,19 @@ function BuiltOnVercel() {
         <div className="flex flex-col items-center gap-4 text-center md:flex-row md:items-center md:justify-between md:text-left">
           <div className="max-w-xl">
             <span className="mb-2 block font-mono text-[11px] uppercase tracking-[0.2em] text-primary">
-              Built on Vercel
+              Built on Cloudflare
             </span>
             <p className="text-sm leading-relaxed text-on-surface-variant">
-              Deploy in three clicks from the Vercel dashboard. Neon, Upstash,
-              and Clerk are all Marketplace integrations — env vars
-              auto-provisioned, free tiers cover everything a team needs.
+              One Worker serves the app, API, assets, auth, rate limiting,
+              email, and AI drafting with D1 as the production source of truth.
             </p>
           </div>
-          <a
-            href="https://vercel.com/new/clone?repository-url=https://github.com/agentkey-dev/agentkey"
-            target="_blank"
-            rel="noopener noreferrer"
+          <Link
+            href="/dashboard/docs"
             className="inline-flex items-center gap-2 rounded-sm border border-outline-variant bg-surface-container px-5 py-3 font-mono text-xs uppercase tracking-widest text-on-surface transition-colors hover:border-primary/40 hover:bg-surface-container-high"
           >
-            <VercelMark />
-            Deploy with Vercel
-          </a>
+            Cloudflare setup
+          </Link>
         </div>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-x-8 gap-y-3 border-t border-white/5 pt-6">
           {primitives.map((name) => (
@@ -905,14 +892,6 @@ function BuiltOnVercel() {
   );
 }
 
-function VercelMark() {
-  return (
-    <svg width="14" height="12" viewBox="0 0 76 65" fill="currentColor" aria-hidden="true">
-      <path d="M37.5274 0L75.0548 65H0L37.5274 0Z" />
-    </svg>
-  );
-}
-
 /* ─── Works With ─── */
 function WorksWith() {
   const frameworks = [
@@ -922,7 +901,7 @@ function WorksWith() {
     "Cline",
     "OpenAI Agents",
     "LangChain",
-    "Vercel AI SDK",
+    "AI SDK",
     "Custom Agents",
   ];
   return (

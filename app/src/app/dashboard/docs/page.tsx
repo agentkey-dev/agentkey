@@ -576,10 +576,10 @@ Rules:
               content. Try a different docs URL if this happens.
             </li>
             <li>
-              Available when the app has Vercel AI Gateway access. Configure
-              the model with the{" "}
+              Available when the app has the Workers AI binding. Configure the
+              model with the{" "}
               <code className="text-xs text-primary">AI_DRAFT_MODEL</code>{" "}
-              env var.
+              env var. The production default is Kimi K2.6.
             </li>
           </ul>
         </Section>
@@ -665,7 +665,7 @@ Rules:
               Admin endpoints
             </h3>
             <p className="text-sm text-on-surface-variant">
-              All admin endpoints require Clerk session authentication.
+              All admin endpoints require a signed-in AgentKey session.
             </p>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">

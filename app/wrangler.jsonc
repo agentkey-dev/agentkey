@@ -1,0 +1,48 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "main": "worker.js",
+  "name": "agentkey",
+  "compatibility_date": "2026-05-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "triggers": {
+    "crons": ["*/15 * * * *"]
+  },
+  "vars": {
+    "APP_URL": "https://agentkey.dev",
+    "AI_DRAFT_MODEL": "@cf/moonshotai/kimi-k2.6",
+    "AUTH_EMAIL_FROM": "AgentKey <login@agentkey.dev>"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "agentkey-prod",
+      "database_id": "b3600026-02c6-47e6-a86b-fcd91915543b",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "ai": {
+    "binding": "AI",
+    "remote": true
+  },
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "remote": true,
+      "allowed_sender_addresses": ["login@agentkey.dev"]
+    }
+  ],
+  "routes": [
+    {
+      "pattern": "agentkey.dev",
+      "custom_domain": true
+    }
+  ]
+}

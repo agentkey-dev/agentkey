@@ -5,32 +5,34 @@
   "scripts": {
     "dev": "next dev --webpack",
     "dev:turbo": "next dev --turbopack",
-    "build": "next build --webpack",
+    "build": "APP_URL=${APP_URL:-https://agentkey.dev} next build --webpack",
     "start": "next start",
+    "preview": "APP_URL=${APP_URL:-https://agentkey.dev} opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "APP_URL=${APP_URL:-https://agentkey.dev} opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "cf-typegen": "wrangler types ./cloudflare-env.d.ts --env-file /dev/null",
     "lint": "eslint .",
     "test": "tsx --test src/tests/**/*.test.ts",
-    "db:generate": "tsx scripts/drizzle.ts generate",
-    "db:migrate": "tsx scripts/drizzle.ts migrate",
-    "db:push": "tsx scripts/drizzle.ts push"
+    "cleanup:local": "sh ../scripts/cleanup-local-artifacts.sh",
+    "smoke:production": "node scripts/smoke-production.mjs",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "wrangler d1 migrations apply agentkey-prod --remote",
+    "db:migrate:local": "wrangler d1 migrations apply agentkey-prod --local"
   },
   "dependencies": {
-    "@clerk/nextjs": "^7.2.2",
-    "@upstash/ratelimit": "^2.0.8",
-    "@upstash/redis": "^1.37.0",
-    "@vercel/analytics": "^2.0.1",
-    "@vercel/speed-insights": "^2.0.0",
+    "@opennextjs/cloudflare": "^1.19.10",
     "ai": "^6.0.141",
     "drizzle-orm": "^0.45.2",
     "next": "^16.2.4",
-    "postgres": "^3.4.8",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
+    "workers-ai-provider": "^3.1.14",
     "yaml": "^2.8.1",
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260518.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -40,6 +42,7 @@
     "eslint-config-next": "16.2.1",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wrangler": "^4.92.0"
   }
 }

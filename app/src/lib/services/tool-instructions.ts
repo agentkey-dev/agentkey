@@ -1,10 +1,8 @@
-import { createHash } from "node:crypto";
-
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 
 import { appendAuditLog } from "@/lib/audit";
 import { normalizeToolInstructionLearned } from "@/lib/core/tool-instruction-suggestions";
-import { getDb } from "@/lib/db/client";
+import { getDb, runDbMutation, type DbScope } from "@/lib/db/client";
 import {
   accessGrants,
   agents,
@@ -21,9 +19,7 @@ type Actor = {
   actorEmail: string;
 };
 
-type DbClient = ReturnType<typeof getDb>;
-type DbTx = Parameters<Parameters<DbClient["transaction"]>[0]>[0];
-type DbExecutor = DbClient | DbTx;
+type DbExecutor = DbScope;
 
 export type ToolInstructionSuggestionSupporter = {
   agentId: string;
@@ -61,11 +57,6 @@ export type PendingInstructionSuggestionDetail =
     status: "pending";
   };
 
-function getInstructionSuggestionLockKeyParts(token: string): [number, number] {
-  const digest = createHash("sha256").update(token).digest();
-  return [digest.readInt32BE(0), digest.readInt32BE(4)];
-}
-
 async function acquireInstructionSuggestionLock(
   db: DbExecutor,
   organizationId: string,
@@ -73,18 +64,11 @@ async function acquireInstructionSuggestionLock(
   baseVersionId: string,
   normalizedLearned: string,
 ) {
-  const token = [
-    "tool_instruction_suggestion",
-    organizationId,
-    toolId,
-    baseVersionId,
-    normalizedLearned,
-  ].join(":");
-  const [leftKey, rightKey] = getInstructionSuggestionLockKeyParts(token);
-
-  await db.execute(sql`
-    select pg_advisory_xact_lock(${leftKey}, ${rightKey})
-  `);
+  void db;
+  void organizationId;
+  void toolId;
+  void baseVersionId;
+  void normalizedLearned;
 }
 
 async function listInstructionSuggestionSupporters(
@@ -399,13 +383,12 @@ export async function suggestToolInstruction(input: {
       dismissalReason: string | null;
     }
 > {
-  const db = getDb();
   const now = new Date();
   const learned = input.learned.trim();
   const why = input.why.trim();
   const normalizedLearned = normalizeToolInstructionLearned(learned);
 
-  return db.transaction(async (tx) => {
+  return runDbMutation(async (tx) => {
     const [toolRow] = await tx
       .select({
         id: tools.id,

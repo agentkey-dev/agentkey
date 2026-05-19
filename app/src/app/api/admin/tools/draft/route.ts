@@ -1,6 +1,7 @@
-import { gateway, generateObject } from "ai";
+import { generateObject } from "ai";
 import { z } from "zod";
 
+import { getWorkersAiModel } from "@/lib/ai/workers";
 import { getAdminContext } from "@/lib/auth/admin";
 import {
   AGENTKEY_CONTEXT,
@@ -9,7 +10,7 @@ import {
   normalizeToolDraft,
   toolDraftSchema,
 } from "@/lib/core/tool-drafting";
-import { getOptionalAiDraftModel, isAiDraftingEnabled } from "@/lib/env";
+import { isAiDraftingEnabled } from "@/lib/env";
 import {
   AI_JSON_BODY_LIMIT,
   AppError,
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
       return jsonError(
         "AI drafting is not available in this environment.",
         503,
-        "Deploy on Vercel with AI Gateway access to use this feature.",
+        "Deploy on Cloudflare with the Workers AI binding to use this feature.",
       );
     }
 
@@ -64,7 +65,7 @@ export async function POST(request: Request) {
 
     const docs = await loadToolDocs(docsUrl);
     const { object } = await generateObject({
-      model: gateway(getOptionalAiDraftModel() ?? "openai/gpt-5.4"),
+      model: getWorkersAiModel(),
       schema: toolDraftSchema,
       system: `${AGENTKEY_CONTEXT}
 

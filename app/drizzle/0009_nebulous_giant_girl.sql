@@ -1,1 +1,0 @@
-ALTER TABLE "organizations" ADD COLUMN "onboarding_dismissed_at" timestamp with time zone;

@@ -5,19 +5,21 @@ Hosted multi-tenant SaaS for provisioning SaaS tool access to AI agents at agent
 ## Stack
 
 - Next.js App Router
-- Clerk for sign-up, sign-in, organizations, and teammate invites
-- Postgres + Drizzle for app data
+- Cloudflare Workers + Workers Assets via OpenNext
+- Cloudflare D1 + Drizzle for app data
+- Native email magic-link authentication with D1-backed sessions
+- Cloudflare Workers AI for AI-assisted tool drafting
+- Cloudflare Email Service and Turnstile
 - AES-256-GCM encryption for stored credentials
 
 ## Required Environment
 
 Copy `.env.example` to `.env.local` and set:
 
-- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
-- `CLERK_SECRET_KEY`
-- `DATABASE_URL`
 - `ENCRYPTION_KEY`
 - `APP_URL` (required in production; optional in local development)
+- `TURNSTILE_SECRET_KEY` (production)
+- `NEXT_PUBLIC_TURNSTILE_SITE_KEY` (production)
 - `NEXT_PUBLIC_BRANDFETCH_CLIENT_ID` (optional, enables Brandfetch logos on tool cards)
 
 Generate the encryption key with:
@@ -32,7 +34,7 @@ openssl rand -base64 32
 cd ..
 npm install
 npm run db:generate
-npm run db:migrate
+npm run db:migrate:local
 npm run dev
 ```
 
@@ -64,17 +66,21 @@ This repo is managed from the workspace root. Run the commands above from the ro
   - `npm run build`
   - `npm run db:generate`
   - `npm run db:migrate`
-  - `npm run db:push`
+  - `npm run db:migrate:local`
+  - `npm run preview`
+  - `npm run deploy`
 - `npm run dev`
 - `npm run lint`
 - `npm run test`
 - `npm run build`
 - `npm run db:generate`
 - `npm run db:migrate`
-- `npm run db:push`
+- `npm run db:migrate:local`
+- `npm run preview`
+- `npm run deploy`
 
 ## Notes
 
-- App data is isolated per Clerk organization.
+- App data is isolated per AgentKey organization.
 - All organization members are full admins in V1.
 - Shared tool credentials are rotated centrally; per-agent credentials are stored on approval.

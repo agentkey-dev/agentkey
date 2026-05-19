@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  DEFAULT_AI_DRAFT_MODEL,
+  getAiDraftModelSettings,
+} from "@/lib/ai/workers";
+import {
   extractReadableDoc,
   extractReadableTextFromHtml,
   loadToolDocs,
@@ -147,6 +151,16 @@ test("load tool docs skips fetching when no docs url is provided", async () => {
   } finally {
     global.fetch = originalFetch;
   }
+});
+
+test("AI draft model settings use Kimi K2.6 thinking controls by default", () => {
+  assert.equal(DEFAULT_AI_DRAFT_MODEL, "@cf/moonshotai/kimi-k2.6");
+  assert.deepEqual(getAiDraftModelSettings(DEFAULT_AI_DRAFT_MODEL), {
+    chat_template_kwargs: { thinking: true },
+  });
+  assert.deepEqual(getAiDraftModelSettings("@cf/openai/gpt-oss-120b"), {
+    reasoning_effort: "medium",
+  });
 });
 
 test("load tool docs fetches and extracts readable content when docs url is provided", async () => {

@@ -2,11 +2,11 @@
 
 > An experiment in access governance for AI agents — built by [elba](https://elba.security)'s [CTO](https://www.linkedin.com/in/antoine-berton-532519225/) to explore how agent identity and approval workflows might work.
 
-Live demo: [agentkey.dev](https://agentkey.dev) · MIT licensed · Self-hostable on Vercel in three clicks.
+Live demo: [agentkey.dev](https://agentkey.dev) · MIT licensed · Deployable on Cloudflare Workers.
 
-AgentKey manages which SaaS tools (GitHub, Linear, Notion, Slack, Stripe, etc.) your AI agents can access — with human approval, encrypted credential vending, and full audit logging. Agents start with zero access and earn it through explicit human approval. Think of it as **Clerk for agent identity**.
+AgentKey manages which SaaS tools (GitHub, Linear, Notion, Slack, Stripe, etc.) your AI agents can access — with human approval, encrypted credential vending, and full audit logging. Agents start with zero access and earn it through explicit human approval.
 
-Works with any agent framework, including OpenClaw, Claude Code, Cursor, Cline, the OpenAI Agents SDK, LangChain, and the Vercel AI SDK.
+Works with any agent framework, including OpenClaw, Claude Code, Cursor, Cline, the OpenAI Agents SDK, LangChain, and the AI SDK.
 
 ## Why AgentKey
 
@@ -19,7 +19,7 @@ AgentKey's take:
 - **Every action is audited** — who requested what, who approved it, when credentials were fetched
 - **One-click revoke** — immediate, no config changes needed
 - **AI-powered setup guides** — step-by-step instructions for creating the right credential
-- **Framework-agnostic** — any agent that can make HTTP requests works (OpenClaw, Claude Code, Cursor, Cline, the OpenAI & Vercel AI SDKs, LangChain, custom stacks)
+- **Framework-agnostic** — any agent that can make HTTP requests works (OpenClaw, Claude Code, Cursor, Cline, OpenAI Agents, LangChain, custom stacks)
 
 ### Why not just use Vault / Doppler / Infisical?
 
@@ -44,17 +44,12 @@ Agents can also **suggest tools** that don't exist in the catalog yet. Multiple 
 
 [agentkey.dev](https://agentkey.dev) — the running instance of this repo. Free to try. No guarantees on uptime; this is an experiment.
 
-### Self-hosted — one-click on Vercel
+### Self-hosted — Cloudflare
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/agentkey-dev/agentkey&env=DATABASE_URL,ENCRYPTION_KEY,NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,CLERK_SECRET_KEY,KV_REST_API_URL,KV_REST_API_TOKEN&envDescription=Postgres,%20encryption%20key,%20Clerk,%20and%20Upstash%20Redis.%20See%20app/.env.example%20for%20details.&envLink=https://github.com/agentkey-dev/agentkey/blob/main/app/.env.example)
-
-All three external dependencies are Vercel Marketplace integrations. From the Vercel dashboard, click to add each:
-
-1. **Neon** (Postgres) — free tier covers a team
-2. **Upstash** (Redis) — free tier covers a team
-3. **Clerk** (auth) — free up to 10k monthly active users
-
-Their env vars are auto-provisioned into your project. The only extra variable you set yourself is `ENCRYPTION_KEY` — generate it with `openssl rand -base64 32`.
+AgentKey runs as one Cloudflare Worker with Workers Assets, D1, Workers AI,
+Email Service, Turnstile, and Cloudflare observability. Configure
+`app/wrangler.jsonc`, set the required Worker secrets, apply D1 migrations, and
+deploy with `npm run deploy`.
 
 ### Self-hosted — local development
 
@@ -64,17 +59,15 @@ cd agentkey
 
 cp app/.env.example app/.env.local
 # Fill in:
-#   DATABASE_URL              Postgres (Neon recommended)
 #   ENCRYPTION_KEY            openssl rand -base64 32
-#   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY
-#   KV_REST_API_URL, KV_REST_API_TOKEN   (Upstash Redis, free tier works)
+#   NEXT_PUBLIC_TURNSTILE_SITE_KEY, TURNSTILE_SECRET_KEY
 
 npm install
-npm run db:push
+npm run db:migrate:local
 npm run dev
 ```
 
-**Prerequisites:** Node.js 20+, PostgreSQL (Neon recommended), Upstash Redis (free tier), Clerk account.
+**Prerequisites:** Node.js 20+ and a Cloudflare account for production bindings.
 
 The repo is managed from the root as an npm workspace. Use the root commands above; you should not need to `cd app` for normal development.
 
@@ -121,7 +114,7 @@ app/                          # Next.js application
 │   │   ├── api/
 │   │   │   ├── tools/        # Agent-facing API
 │   │   │   ├── me/           # Agent identity endpoint
-│   │   │   └── admin/        # Admin API (Clerk-protected)
+│   │   │   └── admin/        # Admin API (session-protected)
 │   │   ├── dashboard/        # Admin dashboard
 │   │   ├── blog/             # Writeups
 │   │   ├── legal/            # Terms, privacy policy
@@ -132,7 +125,7 @@ app/                          # Next.js application
 │       ├── services/         # Business logic
 │       ├── core/             # Config import/export, AI drafting
 │       ├── crypto.ts         # AES-256-GCM encryption
-│       ├── ratelimit.ts      # 4-tier rate limiting (Upstash)
+│       ├── ratelimit.ts      # D1-backed rate limiting
 │       ├── audit.ts          # Append-only audit log
 │       └── agent-keys.ts     # SHA-256 hashed API keys
 ```
@@ -174,12 +167,13 @@ Full details at [agentkey.dev/security](https://agentkey.dev/security).
 ## Tech stack
 
 - **Framework:** Next.js (App Router)
-- **Database:** PostgreSQL (Neon)
-- **Auth:** Clerk
-- **Rate limiting:** Upstash Redis
+- **Runtime:** Cloudflare Workers + Workers Assets via OpenNext
+- **Database:** Cloudflare D1
+- **Auth:** Native email magic-link sessions
+- **Rate limiting:** D1-backed fixed windows
 - **Encryption:** Node.js `node:crypto` (AES-256-GCM)
-- **AI features:** Vercel AI Gateway
-- **Hosting:** Vercel
+- **AI features:** Cloudflare Workers AI
+- **Transactional email:** Cloudflare Email Service
 
 ## License
 

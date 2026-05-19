@@ -4,7 +4,6 @@ export type DocsTocItem = {
 };
 
 export const DOCS_GETTING_STARTED_ITEMS: DocsTocItem[] = [
-  { href: "#walkthrough", label: "Watch this first (5 min)" },
   { href: "#create-agent", label: "1. Create an agent" },
   { href: "#configure-agent", label: "2. Configure the agent" },
   { href: "#add-tools", label: "3. Add tools to the catalog" },

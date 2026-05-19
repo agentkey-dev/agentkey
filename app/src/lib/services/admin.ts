@@ -6,6 +6,7 @@ import {
   eq,
   gte,
   inArray,
+  isNull,
   lte,
   or,
   sql,
@@ -28,7 +29,7 @@ import {
 } from "@/lib/core/tool-config";
 import { encryptSecret } from "@/lib/crypto";
 import { getOrganizationOnboardingState } from "@/lib/dashboard-onboarding";
-import { getDb } from "@/lib/db/client";
+import { getDb, runDbMutation, type DbScope } from "@/lib/db/client";
 import {
   accessGrants,
   agents,
@@ -65,6 +66,7 @@ type Actor = {
   actorId: string;
   actorEmail: string;
 };
+type DbExecutor = DbScope;
 
 const ACCESS_HISTORY_ACTIONS = [
   "grant.requested",
@@ -218,7 +220,7 @@ function toToolCatalogItem(
 }
 
 function getAgentIdsFilter(agentIds: string[]) {
-  return sql`(${auditLog.metadata} ->> 'agentId') in (${sql.join(
+  return sql`json_extract(${auditLog.metadata}, '$.agentId') in (${sql.join(
     agentIds.map((agentId) => sql`${agentId}`),
     sql`, `,
   )})`;
@@ -356,15 +358,15 @@ async function listRecentAgentAccessEvents(
   const rows = await db
     .select({
       id: auditLog.id,
-      agentId: sql<string | null>`${auditLog.metadata} ->> 'agentId'`.as(
+      agentId: sql<string | null>`json_extract(${auditLog.metadata}, '$.agentId')`.as(
         "agent_id",
       ),
       action: auditLog.action,
       createdAt: auditLog.createdAt,
-      toolId: sql<string | null>`${auditLog.metadata} ->> 'toolId'`.as(
+      toolId: sql<string | null>`json_extract(${auditLog.metadata}, '$.toolId')`.as(
         "tool_id",
       ),
-      toolName: sql<string | null>`coalesce(${tools.name}, ${auditLog.metadata} ->> 'toolName')`.as(
+      toolName: sql<string | null>`coalesce(${tools.name}, json_extract(${auditLog.metadata}, '$.toolName'))`.as(
         "tool_name",
       ),
     })
@@ -373,7 +375,7 @@ async function listRecentAgentAccessEvents(
       tools,
       and(
         eq(tools.organizationId, organizationId),
-        sql`${tools.id}::text = ${auditLog.metadata} ->> 'toolId'`,
+        sql`${tools.id} = json_extract(${auditLog.metadata}, '$.toolId')`,
       ),
     )
     .where(
@@ -414,10 +416,6 @@ async function getExistingToolSnapshots(
     credentialConfigured: Boolean(tool.credentialEncrypted),
   }));
 }
-
-type DbExecutor = ReturnType<typeof getDb>;
-type DbTx = Parameters<Parameters<DbExecutor["transaction"]>[0]>[0];
-type DbScope = DbExecutor | DbTx;
 
 type DashboardOverviewCounts = {
   agents: number;
@@ -629,7 +627,7 @@ export async function dismissOrganizationOnboarding(
     .where(
       and(
         eq(organizations.id, organizationId),
-        sql`${organizations.onboardingDismissedAt} is null`,
+        isNull(organizations.onboardingDismissedAt),
       ),
     )
     .returning({
@@ -745,8 +743,7 @@ export async function updateAgent(
   actor: Actor,
 ): Promise<AgentCatalogItem> {
   const db = getDb();
-
-  const updated = await db.transaction(async (tx) => {
+  const updated = await runDbMutation(async (tx) => {
     const existing = await tx.query.agents.findFirst({
       where: and(eq(agents.id, agentId), eq(agents.organizationId, organizationId)),
     });
@@ -899,11 +896,14 @@ export async function rotateAgentKey(
 }
 
 function isUniqueViolationError(error: unknown) {
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
   return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: string }).code === "23505"
+    (typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: string }).code === "23505") ||
+    message.includes("unique constraint") ||
+    message.includes("constraint failed")
   );
 }
 
@@ -1038,9 +1038,7 @@ export async function assignToolToAgent(
       );
     }
 
-    const db = getDb();
-
-    return await db.transaction(async (tx) =>
+    return await runDbMutation(async (tx) =>
       assignToolToAgentInDb(
         tx as DbScope,
         organizationId,
@@ -1276,9 +1274,7 @@ export async function createTool(
     return createToolInDb(options.db, organizationId, input, actor, options);
   }
 
-  const db = getDb();
-
-  return db.transaction(async (tx) =>
+  return runDbMutation(async (tx) =>
     createToolInDb(tx as DbScope, organizationId, input, actor, options),
   );
 }
@@ -1298,8 +1294,7 @@ export async function updateTool(
   },
   actor: Actor,
 ) {
-  const db = getDb();
-  return db.transaction(async (tx) => {
+  return runDbMutation(async (tx) => {
     const existing = await tx.query.tools.findFirst({
       where: and(eq(tools.id, toolId), eq(tools.organizationId, organizationId)),
     });
@@ -1528,9 +1523,7 @@ export async function deleteTool(
   toolId: string,
   actor: Actor,
 ) {
-  const db = getDb();
-
-  return db.transaction(async (tx) => {
+  return runDbMutation(async (tx) => {
     const [existing] = await tx
       .select({
         id: tools.id,
@@ -1836,9 +1829,7 @@ export async function approveRequest(
   credential: string | undefined,
   actor: Actor,
 ) {
-  const db = getDb();
-
-  return db.transaction(async (tx) => {
+  return runDbMutation(async (tx) => {
     const pending = await tx
       .select({
         id: accessGrants.id,
@@ -1856,8 +1847,7 @@ export async function approveRequest(
           eq(accessGrants.organizationId, organizationId),
         ),
       )
-      .limit(1)
-      .for("update");
+      .limit(1);
 
     const grant = pending[0];
 
@@ -2008,13 +1998,15 @@ export async function listAuditEvents(
   }
 
   if (filters.agentId) {
-    clauses.push(sql`${auditLog.metadata} ->> 'agentId' = ${filters.agentId}`);
+    clauses.push(
+      sql`json_extract(${auditLog.metadata}, '$.agentId') = ${filters.agentId}`,
+    );
   }
 
   if (filters.toolId) {
     clauses.push(
       or(
-        sql`${auditLog.metadata} ->> 'toolId' = ${filters.toolId}`,
+        sql`json_extract(${auditLog.metadata}, '$.toolId') = ${filters.toolId}`,
         and(
           eq(auditLog.targetType, "tool"),
           eq(auditLog.targetId, filters.toolId),

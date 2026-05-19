@@ -4,7 +4,6 @@ import {
   OG_IMAGE_SIZE,
 } from "@/lib/og-card";
 
-export const runtime = "edge";
 export const alt = "Security — AgentKey";
 export const size = OG_IMAGE_SIZE;
 export const contentType = OG_IMAGE_CONTENT_TYPE;

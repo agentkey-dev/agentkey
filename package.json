@@ -13,10 +13,15 @@
     "dev:turbo": "npm run dev:turbo --workspace app",
     "build": "npm run build --workspace app",
     "start": "npm run start --workspace app",
+    "preview": "npm run preview --workspace app",
+    "deploy": "npm run deploy --workspace app",
+    "cf-typegen": "npm run cf-typegen --workspace app",
     "lint": "npm run lint --workspace app",
     "test": "npm run test --workspace app",
+    "cleanup:local": "sh scripts/cleanup-local-artifacts.sh",
+    "smoke:production": "npm run smoke:production --workspace app",
     "db:generate": "npm run db:generate --workspace app",
     "db:migrate": "npm run db:migrate --workspace app",
-    "db:push": "npm run db:push --workspace app"
+    "db:migrate:local": "npm run db:migrate:local --workspace app"
   }
 }

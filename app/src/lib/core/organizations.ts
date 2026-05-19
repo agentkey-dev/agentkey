@@ -1,5 +1,6 @@
 export function normalizeOrganizationIdentity(input: {
-  clerkOrgId: string;
+  legacyProviderOrgId?: string | null;
+  legacyClerkOrgId?: string | null;
   name: string;
   slug?: string | null;
 }) {
@@ -13,9 +14,9 @@ export function normalizeOrganizationIdentity(input: {
       .slice(0, 64);
 
   return {
-    clerkOrgId: input.clerkOrgId,
+    legacyClerkOrgId:
+      input.legacyClerkOrgId ?? input.legacyProviderOrgId ?? null,
     name,
     slug: slug || null,
   };
 }
-

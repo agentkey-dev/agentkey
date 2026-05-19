@@ -1,8 +1,8 @@
-import { CreateOrganization, UserButton } from "@clerk/nextjs";
-import { auth } from "@clerk/nextjs/server";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+
+import { getAdminContext } from "@/lib/auth/admin";
 
 export const metadata: Metadata = {
   robots: {
@@ -12,13 +12,13 @@ export const metadata: Metadata = {
 };
 
 export default async function OnboardingPage() {
-  const { userId, orgId } = await auth();
+  const context = await getAdminContext();
 
-  if (!userId) {
+  if (context.kind === "signed-out") {
     redirect("/sign-in");
   }
 
-  if (orgId) {
+  if (context.kind === "ready") {
     redirect("/dashboard");
   }
 
@@ -32,7 +32,14 @@ export default async function OnboardingPage() {
           >
             AgentKey
           </Link>
-          <UserButton showName />
+          <form action="/api/auth/sign-out" method="post">
+            <button
+              type="submit"
+              className="text-sm text-on-surface-variant transition-colors hover:text-on-surface"
+            >
+              Sign out
+            </button>
+          </form>
         </div>
         <div className="grid grid-cols-1 items-start gap-12 lg:grid-cols-[1fr_1fr]">
           <div className="space-y-8">
@@ -59,13 +66,30 @@ export default async function OnboardingPage() {
               </ol>
             </div>
           </div>
-          <div className="flex justify-center lg:justify-end">
-            <CreateOrganization
-              path="/onboarding"
-              routing="path"
-              afterCreateOrganizationUrl="/dashboard"
-            />
-          </div>
+          <form
+            action="/api/auth/organizations"
+            method="post"
+            className="w-full max-w-md justify-self-center rounded-sm border border-white/10 bg-surface-container p-6 lg:justify-self-end"
+          >
+            <label className="block space-y-2">
+              <span className="text-sm text-on-surface-variant">
+                Workspace name
+              </span>
+              <input
+                name="name"
+                required
+                minLength={2}
+                maxLength={120}
+                className="w-full rounded-sm border border-white/10 bg-surface-container-lowest px-3 py-2 text-on-surface outline-none focus:border-primary"
+              />
+            </label>
+            <button
+              type="submit"
+              className="mt-5 w-full rounded-sm bg-primary px-4 py-2.5 text-sm font-semibold text-on-primary transition-opacity hover:opacity-90"
+            >
+              Create workspace
+            </button>
+          </form>
         </div>
       </div>
     </main>

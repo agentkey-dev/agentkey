@@ -1,6 +1,7 @@
-import { SignUp } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import Link from "next/link";
+
+import { getOptionalTurnstileSiteKey } from "@/lib/env";
 
 export const metadata: Metadata = {
   robots: {
@@ -10,8 +11,17 @@ export const metadata: Metadata = {
 };
 
 export default function SignUpPage() {
+  const turnstileSiteKey = getOptionalTurnstileSiteKey();
+
   return (
     <main className="min-h-screen bg-surface px-6 py-10">
+      {turnstileSiteKey ? (
+        <script
+          src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+          async
+          defer
+        />
+      ) : null}
       <div className="mx-auto max-w-[1200px]">
         <div className="mb-10 flex items-center justify-between">
           <Link
@@ -34,9 +44,8 @@ export default function SignUpPage() {
               <span className="text-primary">API keys.</span>
             </h1>
             <p className="max-w-lg text-base leading-relaxed text-on-surface-variant">
-              Create an account to hand credentials to your agents on demand.
-              Self-hostable, works with OpenClaw, Claude Code, Cursor, Cline,
-              the OpenAI &amp; Vercel AI SDKs — anything that speaks HTTP.
+              Create an account with a one-time email link. After sign-in,
+              create a workspace and start approving agent access.
             </p>
             <ul className="space-y-3 text-sm text-on-surface-variant">
               <li className="flex items-start gap-3">
@@ -61,17 +70,31 @@ export default function SignUpPage() {
                 </span>
               </li>
             </ul>
-            <p className="font-mono text-[11px] uppercase tracking-widest text-on-surface-variant/70">
-              Self-hostable · Open source (MIT)
-            </p>
           </div>
-          <div className="flex justify-center lg:justify-end">
-            <SignUp
-              path="/sign-up"
-              routing="path"
-              signInUrl="/sign-in"
-              fallbackRedirectUrl="/dashboard"
-            />
+          <div className="w-full max-w-md justify-self-center rounded-sm border border-white/10 bg-surface-container p-6 lg:justify-self-end">
+            <form action="/api/auth/magic-link" method="post" className="space-y-5">
+              <label className="block space-y-2">
+                <span className="text-sm text-on-surface-variant">Email</span>
+                <input
+                  name="email"
+                  type="email"
+                  required
+                  className="w-full rounded-sm border border-white/10 bg-surface-container-lowest px-3 py-2 text-on-surface outline-none focus:border-primary"
+                />
+              </label>
+              {turnstileSiteKey ? (
+                <div
+                  className="cf-turnstile"
+                  data-sitekey={turnstileSiteKey}
+                />
+              ) : null}
+              <button
+                type="submit"
+                className="w-full rounded-sm bg-primary px-4 py-2.5 text-sm font-semibold text-on-primary transition-opacity hover:opacity-90"
+              >
+                Send sign-up link
+              </button>
+            </form>
           </div>
         </div>
       </div>
