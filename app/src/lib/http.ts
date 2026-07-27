@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 
-import { getOptionalAgentCorsOrigins } from "@/lib/env";
+import { getOptionalAgentCorsOrigins, getTrustedProxyCount } from "@/lib/env";
 
 export function assertAllowedAgentOrigin(request: Request) {
   const requestOrigin = request.headers.get("origin");
@@ -220,12 +220,50 @@ export function readTextBody(
   return readBodyWithLimit(request, maxBytes, sizeHintDetail);
 }
 
-export function getRequestMetadata(request: Request) {
+/**
+ * Resolve the client IP from proxy headers.
+ *
+ * SECURITY: X-Forwarded-For is append-only — each proxy appends the address it
+ * saw, so the RIGHTMOST entries are the trustworthy ones and everything to the
+ * left is whatever the original client chose to send. Reading `split(",")[0]`
+ * hands an attacker a fresh rate-limit bucket on every request simply by
+ * varying a header. We index from the right by the number of proxies we
+ * actually trust, and prefer platform headers that a client cannot forge.
+ */
+export function getClientIp(request: Request) {
+  // Cloudflare overwrites this with the real peer address; not client-settable.
+  const cfIp = request.headers.get("cf-connecting-ip");
+  if (cfIp?.trim()) {
+    return cfIp.trim();
+  }
+
   const forwardedFor = request.headers.get("x-forwarded-for");
-  const ip =
-    forwardedFor?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
-    null;
+  if (forwardedFor) {
+    const hops = forwardedFor
+      .split(",")
+      .map((hop) => hop.trim())
+      .filter(Boolean);
+    const trustedProxyCount = getTrustedProxyCount();
+    // With N trusted proxies, the address the outermost trusted proxy observed
+    // sits N entries from the right.
+    const index = hops.length - trustedProxyCount;
+
+    if (index >= 0 && index < hops.length) {
+      return hops[index];
+    }
+
+    // Fewer hops than expected (direct hit on the origin, or a misconfigured
+    // proxy count): fall back to the rightmost entry, never the leftmost.
+    if (hops.length > 0) {
+      return hops[hops.length - 1];
+    }
+  }
+
+  return request.headers.get("x-real-ip")?.trim() || null;
+}
+
+export function getRequestMetadata(request: Request) {
+  const ip = getClientIp(request);
   const userAgentRaw = request.headers.get("user-agent");
   const userAgent = userAgentRaw ? userAgentRaw.slice(0, 256) : null;
 

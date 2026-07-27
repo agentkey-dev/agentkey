@@ -189,3 +189,46 @@ test("tool suggestion notification dispatch is best-effort across providers", as
   assert.match(calls[0].body, /New AgentKey tool suggestion/);
   assert.match(calls[1].body, /https:\/\/linear\.app/);
 });
+
+test("Slack link markup in agent-supplied text is unwrapped, not rendered", () => {
+  // A malicious agent puts Slack link syntax in its access-request reason. If
+  // it survives into the webhook payload, the admin's approval channel shows a
+  // clickable link whose visible label is indistinguishable from the real
+  // "Review in dashboard" line the message emits two rows below.
+  const message = formatAccessRequestNotification({
+    organizationName: "Acme",
+    agentName: "ci-bot",
+    toolName: "Stripe",
+    reason:
+      "Needed for CI. <https://agentkey-dev.attacker.tld/dashboard|Review in dashboard>",
+    requestedAt: new Date("2026-01-01T00:00:00.000Z"),
+    requestsUrl: "https://agentkey.dev/dashboard/requests",
+  });
+
+  // The anchor-text alias is gone and the true destination is visible.
+  assert.ok(!message.includes("|Review in dashboard>"));
+  assert.match(message, /https:\/\/agentkey-dev\.attacker\.tld\/dashboard/);
+  // No raw angle brackets survive anywhere in the agent-controlled section.
+  const reasonLine = message
+    .split("\n")
+    .find((line) => line.startsWith("Reason:"));
+  assert.ok(reasonLine);
+  assert.ok(!reasonLine.includes("<"));
+  assert.ok(!reasonLine.includes(">"));
+});
+
+test("Slack mention and channel markup stay neutralized", () => {
+  const message = formatAccessRequestNotification({
+    organizationName: "Acme",
+    agentName: "ci-bot",
+    toolName: "Stripe",
+    reason: "urgent <!channel> <@U123> <#C456> @everyone",
+    requestedAt: new Date("2026-01-01T00:00:00.000Z"),
+    requestsUrl: "https://agentkey.dev/dashboard/requests",
+  });
+
+  assert.match(message, /\[channel\]/);
+  assert.match(message, /\[user\]/);
+  assert.ok(!message.includes("<!channel>"));
+  assert.ok(!message.includes("<@U123>"));
+});

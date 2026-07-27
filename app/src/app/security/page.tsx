@@ -197,6 +197,31 @@ export default function SecurityPage() {
             </li>
           </ul>
 
+          <h2>Who counts as an admin</h2>
+
+          <p>
+            AgentKey&apos;s trust boundary is the{" "}
+            <strong>organization</strong>, not a role within it. Every member of
+            an organization has the same privileges: they can register agents,
+            add tools, grant access, approve or deny requests, rotate agent
+            keys, and read the audit log. This is deliberate — organization
+            membership carries exactly one role, and it is <code>admin</code>.
+          </p>
+
+          <p>
+            The practical consequence is worth stating plainly:{" "}
+            <strong>
+              inviting someone to your organization gives them the ability to
+              reach every credential in it
+            </strong>
+            , because they can assign any tool to an agent they control and then
+            fetch that tool&apos;s credential through the agent API. Treat an
+            organization invite as equivalent to sharing the credentials
+            themselves, and use separate organizations to separate blast radius.
+            Every such action is attributed to the member who took it in the
+            audit log.
+          </p>
+
           <h2>Agent API key management</h2>
 
           <p>

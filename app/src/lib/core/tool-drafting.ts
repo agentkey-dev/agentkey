@@ -52,6 +52,29 @@ export function wrapUntrustedAgentContext(reasons: string[]) {
   const body = reasons.map((r) => `- ${escapeUntrustedBlock(r)}`).join("\n");
   return `<untrusted_agent_context>\n${body}\n</untrusted_agent_context>`;
 }
+
+/**
+ * The tool name is agent-controlled: an agent submits it via
+ * POST /api/tools/suggest, the admin's "Add to catalog" form is prefilled from
+ * the suggestion, and the value lands in these prompts. Interpolated bare, a
+ * name containing newlines plus a forged wrapper close could inject prompt
+ * lines whose output becomes the tool's usage guide — the text vended verbatim
+ * to every approved agent alongside its credential.
+ *
+ * Newlines are collapsed so the value can never introduce a new prompt line.
+ */
+export function wrapUntrustedToolName(name: string) {
+  const flattened = escapeUntrustedBlock(name).replace(/[\r\n]+/g, " ").trim();
+  return `<untrusted_tool_name>${flattened}</untrusted_tool_name>`;
+}
+
+/**
+ * Model output derived from fetched third-party docs. Trusted no more than the
+ * docs it was summarized from.
+ */
+export function wrapUntrustedGuideMarkdown(markdown: string) {
+  return `<untrusted_guide_markdown>\n${escapeUntrustedBlock(markdown)}\n</untrusted_guide_markdown>`;
+}
 const TOOL_AUTH_TYPES = ["api_key", "oauth_token", "bot_token", "other"] as const;
 
 export const toolAuthTypeSchema = z.enum(TOOL_AUTH_TYPES);

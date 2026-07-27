@@ -99,8 +99,17 @@ export const suggestToolSchema = z.object({
 });
 
 export const suggestToolInstructionSchema = z.object({
-  learned: z.string().trim().min(5),
-  why: z.string().trim().min(5),
+  // Bounded like every other agent-supplied free-text field. `learned` is
+  // merged into the tool's usage guide, which is capped at 4000 chars and is
+  // vended to every approved agent alongside the credential; an unbounded
+  // field here let one agent push arbitrarily large text into that path.
+  //
+  // Deliberately more generous than the 500-char cap on `reason` elsewhere —
+  // these carry technical notes and are expected to run long (see the
+  // "accepts notes longer than 500 characters" test). The point is a ceiling,
+  // not a tight limit.
+  learned: z.string().trim().min(5).max(2000),
+  why: z.string().trim().min(5).max(2000),
 });
 
 export const approveRequestSchema = z.object({

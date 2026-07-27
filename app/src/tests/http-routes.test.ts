@@ -5,6 +5,7 @@ import {
   AGENT_JSON_BODY_LIMIT,
   agentCorsPreflight,
   AppError,
+  getClientIp,
   jsonData,
   readJsonBody,
 } from "@/lib/http";
@@ -305,4 +306,67 @@ test("updateAgentSchema rejects overlong descriptions", () => {
   });
 
   assert.equal(parsed.success, false);
+});
+
+test("client IP is taken from the trusted proxy hop, not the client-supplied one", () => {
+  const previous = process.env.TRUSTED_PROXY_COUNT;
+  delete process.env.TRUSTED_PROXY_COUNT; // defaults to 1 trusted proxy
+
+  try {
+    // An attacker prepends a forged address on every request to get a fresh
+    // rate-limit bucket each time. With one trusted proxy in front, the real
+    // peer is the entry that proxy appended — the rightmost one.
+    const forged = new Request("https://agentkey.dev/api/tools", {
+      headers: { "x-forwarded-for": "10.9.9.9, 203.0.113.7" },
+    });
+    assert.equal(getClientIp(forged), "203.0.113.7");
+
+    const single = new Request("https://agentkey.dev/api/tools", {
+      headers: { "x-forwarded-for": "203.0.113.7" },
+    });
+    assert.equal(getClientIp(single), "203.0.113.7");
+  } finally {
+    if (previous === undefined) {
+      delete process.env.TRUSTED_PROXY_COUNT;
+    } else {
+      process.env.TRUSTED_PROXY_COUNT = previous;
+    }
+  }
+});
+
+test("cf-connecting-ip wins over a forgeable X-Forwarded-For", () => {
+  const request = new Request("https://agentkey.dev/api/tools", {
+    headers: {
+      "x-forwarded-for": "10.9.9.9",
+      "cf-connecting-ip": "203.0.113.7",
+    },
+  });
+
+  assert.equal(getClientIp(request), "203.0.113.7");
+});
+
+test("rotating a forged X-Forwarded-For does not produce distinct rate-limit keys", () => {
+  const previous = process.env.TRUSTED_PROXY_COUNT;
+  delete process.env.TRUSTED_PROXY_COUNT;
+
+  try {
+    const seen = new Set<string | null>();
+    for (const forged of ["10.0.0.1", "10.0.0.2", "10.0.0.3"]) {
+      seen.add(
+        getClientIp(
+          new Request("https://agentkey.dev/api/tools", {
+            headers: { "x-forwarded-for": `${forged}, 203.0.113.7` },
+          }),
+        ),
+      );
+    }
+
+    assert.deepEqual([...seen], ["203.0.113.7"]);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.TRUSTED_PROXY_COUNT;
+    } else {
+      process.env.TRUSTED_PROXY_COUNT = previous;
+    }
+  }
 });

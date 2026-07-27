@@ -74,6 +74,26 @@ export function getOptionalAuthEmailFrom() {
   return getOptionalEnv("AUTH_EMAIL_FROM");
 }
 
+// Number of trusted reverse proxies in front of the app. The rightmost N
+// entries of X-Forwarded-For are appended by infrastructure we trust; anything
+// further left is client-supplied and forgeable. Defaults to 1 (Cloudflare).
+// Set to 0 only when nothing proxies the app.
+export function getTrustedProxyCount() {
+  const raw = getOptionalEnv("TRUSTED_PROXY_COUNT");
+
+  if (raw === undefined) {
+    return 1;
+  }
+
+  const value = Number.parseInt(raw, 10);
+
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error("TRUSTED_PROXY_COUNT must be a non-negative integer.");
+  }
+
+  return value;
+}
+
 export function getOptionalAgentCorsOrigins() {
   const value = getOptionalEnv("AGENT_CORS_ORIGINS");
 

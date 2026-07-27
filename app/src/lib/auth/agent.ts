@@ -4,15 +4,11 @@ import { hashAgentApiKey } from "@/lib/agent-keys";
 import { appendAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db/client";
 import { agents } from "@/lib/db/schema";
-import { AppError } from "@/lib/http";
+import { AppError, getClientIp } from "@/lib/http";
 import { enforceRateLimit } from "@/lib/ratelimit";
 
 function getRequestIp(request: Request) {
-  return (
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
-    "unknown"
-  );
+  return getClientIp(request) || "unknown";
 }
 
 /**

@@ -474,6 +474,15 @@ test("updateAgent updates name and description and preserves access summaries", 
         where() {
           return this;
         },
+        // listRecentAgentAccessEvents caps events per agent with a windowed
+        // subquery, so the builder chain ends in .as() and the ranked result
+        // is re-selected. Any column read off the stub is ignored by the mock.
+        as() {
+          return new Proxy(
+            {},
+            { get: (_target, property) => ({ column: String(property) }) },
+          );
+        },
         orderBy: async () => [
           {
             id: "evt-1",
@@ -610,6 +619,15 @@ test("updateAgent writes an agent.updated audit event", async () => {
         },
         where() {
           return this;
+        },
+        // listRecentAgentAccessEvents caps events per agent with a windowed
+        // subquery, so the builder chain ends in .as() and the ranked result
+        // is re-selected. Any column read off the stub is ignored by the mock.
+        as() {
+          return new Proxy(
+            {},
+            { get: (_target, property) => ({ column: String(property) }) },
+          );
         },
         orderBy: async () => [],
       };

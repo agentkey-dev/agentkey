@@ -264,6 +264,16 @@ export function sanitizeWebhookField(value: string, maxLength = 500) {
     .replace(/<!subteam\^[^>]*>/gi, "[subteam]")
     .replace(/<@[^>]+>/g, "[user]")
     .replace(/<#[^>]+>/g, "[channel]")
+    // Slack link markup: <https://evil.example|Review in dashboard>. Without
+    // this, an agent's `reason` renders in the approval channel as a clickable
+    // link with attacker-chosen anchor text — visually identical to the real
+    // "Review in dashboard" line two rows below it. Unwrap to the bare URL so
+    // the admin sees where it actually points.
+    .replace(/<((?:https?|mailto|tel|skype):[^|>]*)(?:\|[^>]*)?>/gi, "$1")
+    // Escape any remaining angle brackets per Slack's own guidance, so no
+    // other control sequence survives as markup.
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
     // Discord mentions: @everyone, @here
     .replace(/@everyone\b/g, "@\u200beveryone")
     .replace(/@here\b/g, "@\u200bhere");

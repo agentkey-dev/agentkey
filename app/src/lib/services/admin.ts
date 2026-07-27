@@ -274,6 +274,10 @@ export function summarizeAgentGrantRows(
   return grantsByAgent;
 }
 
+// Recent access events shown per agent on the dashboard. Enforced in SQL by
+// listRecentAgentAccessEvents and re-applied here as a safety net.
+const MAX_ACCESS_EVENTS_PER_AGENT = 5;
+
 export function collectRecentAgentAccessEvents(
   rows: Array<{
     id: string;
@@ -293,7 +297,7 @@ export function collectRecentAgentAccessEvents(
 
     const bucket = eventsByAgent.get(row.agentId) ?? [];
 
-    if (bucket.length >= 5) {
+    if (bucket.length >= MAX_ACCESS_EVENTS_PER_AGENT) {
       continue;
     }
 
@@ -387,7 +391,15 @@ async function listRecentAgentAccessEvents(
   }
 
   const db = getDb();
-  const rows = await db
+
+  // The per-agent cap is applied in SQL, not in JS. This query previously
+  // selected every matching audit row and discarded all but 5 per agent after
+  // streaming them into the worker. Row volume here is attacker-influenced: an
+  // agent holding one approved tool can append a `credential.vended` row per
+  // fetch at its permitted 60/min, so a single compromised agent could grow
+  // this result set without bound and take down every admin page that calls
+  // it — on Workers, against the isolate's memory limit.
+  const ranked = db
     .select({
       id: auditLog.id,
       agentId: sql<string | null>`json_extract(${auditLog.metadata}, '$.agentId')`.as(
@@ -401,6 +413,10 @@ async function listRecentAgentAccessEvents(
       toolName: sql<string | null>`coalesce(${tools.name}, json_extract(${auditLog.metadata}, '$.toolName'))`.as(
         "tool_name",
       ),
+      rowNumber: sql<number>`row_number() over (
+        partition by json_extract(${auditLog.metadata}, '$.agentId')
+        order by ${auditLog.createdAt} desc
+      )`.as("row_number"),
     })
     .from(auditLog)
     .leftJoin(
@@ -417,7 +433,20 @@ async function listRecentAgentAccessEvents(
         getAgentIdsFilter(agentIds),
       ),
     )
-    .orderBy(desc(auditLog.createdAt));
+    .as("ranked");
+
+  const rows = await db
+    .select({
+      id: ranked.id,
+      agentId: ranked.agentId,
+      action: ranked.action,
+      createdAt: ranked.createdAt,
+      toolId: ranked.toolId,
+      toolName: ranked.toolName,
+    })
+    .from(ranked)
+    .where(lte(ranked.rowNumber, MAX_ACCESS_EVENTS_PER_AGENT))
+    .orderBy(desc(ranked.createdAt));
 
   return collectRecentAgentAccessEvents(rows);
 }

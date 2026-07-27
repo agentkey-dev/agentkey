@@ -330,13 +330,33 @@ export async function suggestTool(input: SuggestToolInput): Promise<SuggestToolR
     if (matchingSuggestion) {
       const isExistingPendingSuggestion = matchingSuggestion.status === "pending";
 
+      // SECURITY: a suggestion's identity (name/URL/domain) is fixed by the
+      // agent that created it. Later supporters may only add their reason.
+      //
+      // Rewriting identity from the newest supporter let any agent holding a
+      // valid key hijack another agent's suggestion — first blanking the URL
+      // (an empty `url` normalizes to null, so the name branch keeps matching),
+      // then repointing it at a host it controls. The suggestion kept its
+      // accumulated supporter count, so the admin saw "several agents want
+      // this" next to an attacker-chosen URL, which also feeds the branding
+      // lookup and the AI setup-guide fetch.
+      //
+      // The only widening we allow is null -> concrete domain, so a suggestion
+      // first raised without a URL can still acquire one. Never domain -> null
+      // and never domain -> different domain.
+      const canAdoptDomain =
+        matchingSuggestion.normalizedDomain === null &&
+        identity.normalizedDomain !== null;
+
       await tx
         .update(toolSuggestions)
         .set({
-          name: input.name,
-          normalizedName: identity.normalizedName,
-          url: identity.normalizedUrl,
-          normalizedDomain: identity.normalizedDomain,
+          ...(canAdoptDomain
+            ? {
+                url: identity.normalizedUrl,
+                normalizedDomain: identity.normalizedDomain,
+              }
+            : {}),
           status: "pending",
           dismissedUntil: null,
           convertedToolId: null,
@@ -365,8 +385,16 @@ export async function suggestTool(input: SuggestToolInput): Promise<SuggestToolR
           targetType: "tool_suggestion",
           targetId: matchingSuggestion.id,
           metadata: {
-            toolName: input.name,
-            url: identity.normalizedUrl,
+            // Record the suggestion's own identity, not this supporter's
+            // proposed one — the two now diverge whenever a later supporter
+            // submits a different name or URL, and the audit trail should
+            // reflect what the admin will actually see in the inbox.
+            toolName: matchingSuggestion.name,
+            url: canAdoptDomain
+              ? identity.normalizedUrl
+              : matchingSuggestion.url,
+            submittedName: input.name,
+            submittedUrl: identity.normalizedUrl,
           },
         },
         tx,
@@ -605,6 +633,20 @@ async function seedPendingGrantsFromSuggestions(
     const existingGrant = existingGrantByAgent.get(agentId);
 
     if (existingGrant?.status === "approved" || existingGrant?.status === "pending") {
+      continue;
+    }
+
+    // SECURITY: never resurrect a grant a human explicitly shut down. Seeding
+    // ran for every supporter whose grant was not already approved/pending,
+    // which swept up "denied" and "revoked" too — flipping them back to
+    // pending, clearing denialReason, and attributing the change to whichever
+    // admin happened to convert the suggestion. An agent that had just been
+    // revoked could re-enter the approval queue with no action of its own,
+    // and the reason the admin recorded for cutting it off was destroyed.
+    //
+    // The agent can still ask again through POST /api/tools/{id}/request,
+    // which is an explicit, audited act by the agent itself.
+    if (existingGrant?.status === "denied" || existingGrant?.status === "revoked") {
       continue;
     }
 
