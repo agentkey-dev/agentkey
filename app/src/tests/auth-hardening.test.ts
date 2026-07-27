@@ -15,6 +15,7 @@ import {
   enforceMagicLinkRateLimits,
   getMagicLinkRateLimitSubjects,
 } from "@/lib/auth/magic-link";
+import { getAppOrigin } from "@/lib/origin";
 import { isAdminMembership } from "@/lib/auth/admin";
 import { verifyTurnstileForAuth } from "@/lib/auth/turnstile";
 import {
@@ -591,4 +592,77 @@ test("organization selection updates only memberships owned by the user", async 
 test("dashboard admin context only treats admin memberships as admins", () => {
   assert.equal(isAdminMembership({ role: "admin" }), true);
   assert.equal(isAdminMembership({ role: "member" }), false);
+});
+
+test("emailed sign-in link uses APP_URL, not a forged request host", async () => {
+  // Regression guard. On this stack `new URL(request.url).origin` is
+  // attacker-controlled: @opennextjs/aws promotes X-Forwarded-Host onto `host`,
+  // the adapter enables experimental.trustHostHeader, and Next then builds
+  // initURL from that host. If the magic-link route ever goes back to a
+  // request-derived origin, a victim's sign-in email points at an
+  // attacker-controlled host carrying a live login token.
+  const previousAppUrl = process.env.APP_URL;
+  process.env.APP_URL = "https://agentkey.dev";
+
+  try {
+    const sent: Array<{ text: string; html: string }> = [];
+    const env = {
+      APP_ENV: "production",
+      EMAIL: {
+        send: async (message: { text: string; html: string }) => {
+          sent.push(message);
+        },
+      },
+    } as unknown as Parameters<typeof sendMagicLinkEmailWithEnv>[1];
+
+    await sendMagicLinkEmailWithEnv(
+      {
+        email: "victim@corp.example",
+        token: "test-login-token",
+        // What the route must pass: the configured origin, never the request's.
+        origin: getAppOrigin(),
+      },
+      env,
+    );
+
+    assert.equal(sent.length, 1);
+    for (const body of [sent[0].text, sent[0].html]) {
+      assert.ok(
+        body.includes("https://agentkey.dev/api/auth/callback?token="),
+        "sign-in link must be built from APP_URL",
+      );
+      assert.ok(
+        !body.includes("evil.example"),
+        "sign-in link must never reference a forged host",
+      );
+    }
+  } finally {
+    if (previousAppUrl === undefined) {
+      // APP_URL is declared non-optional in cloudflare-env.d.ts, so `delete`
+      // is a type error; Reflect removes it without fighting the declaration.
+      Reflect.deleteProperty(process.env, "APP_URL");
+    } else {
+      process.env.APP_URL = previousAppUrl;
+    }
+  }
+});
+
+test("getAppOrigin ignores request-controlled headers entirely", () => {
+  const previousAppUrl = process.env.APP_URL;
+  process.env.APP_URL = "https://agentkey.dev";
+
+  try {
+    // getAppOrigin takes no request at all — that is the point. It cannot be
+    // influenced by Host, X-Forwarded-Host, or anything else on the wire.
+    assert.equal(getAppOrigin(), "https://agentkey.dev");
+    assert.equal(getAppOrigin.length, 0);
+  } finally {
+    if (previousAppUrl === undefined) {
+      // APP_URL is declared non-optional in cloudflare-env.d.ts, so `delete`
+      // is a type error; Reflect removes it without fighting the declaration.
+      Reflect.deleteProperty(process.env, "APP_URL");
+    } else {
+      process.env.APP_URL = previousAppUrl;
+    }
+  }
 });
