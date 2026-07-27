@@ -67,9 +67,21 @@ export async function getCurrentSession() {
     return null;
   }
 
+  return findSessionByToken(token);
+}
+
+/**
+ * Resolve a session from its raw token.
+ *
+ * Split out from getCurrentSession so the security-critical part — the three
+ * predicates below — is reachable without mocking next/headers. All three must
+ * hold: the token hash matches, the session was never revoked, and it has not
+ * expired. Dropping any one silently re-authenticates a session the operator
+ * believes they killed.
+ */
+export async function findSessionByToken(token: string, now = new Date()) {
   const db = getDb();
   const tokenHash = hashToken(token);
-  const now = new Date();
   const row = await db
     .select({
       session: authSessions,
@@ -152,6 +164,27 @@ export async function createLoginToken(email: string, turnstilePassed: boolean) 
   });
 
   return token;
+}
+
+/**
+ * Look up a login token WITHOUT consuming it.
+ *
+ * Used by the sign-in confirmation step so a token is not burned just because
+ * something loaded the URL — an email scanner prefetching the link, or an
+ * attacker trying to force a session into someone else's browser. Only the
+ * deliberate same-origin POST calls consumeLoginToken.
+ */
+export async function findLoginToken(token: string, now = new Date()) {
+  const db = getDb();
+  const loginToken = await db.query.authLoginTokens.findFirst({
+    where: and(
+      eq(authLoginTokens.tokenHash, hashToken(token)),
+      isNull(authLoginTokens.consumedAt),
+      gt(authLoginTokens.expiresAt, now),
+    ),
+  });
+
+  return loginToken ?? null;
 }
 
 export async function consumeLoginToken(token: string) {

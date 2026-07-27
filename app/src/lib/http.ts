@@ -262,6 +262,29 @@ export function getClientIp(request: Request) {
   return request.headers.get("x-real-ip")?.trim() || null;
 }
 
+/**
+ * True only for a request the browser reports as originating from our own
+ * page. Used to gate endpoints that mint or destroy a session, where the usual
+ * "SameSite=Lax protects us" reasoning does not apply because the request does
+ * not depend on an existing cookie.
+ *
+ * Sec-Fetch-Site is set by every current browser and cannot be spoofed from
+ * page JS. When it is absent (a non-browser client, or a very old browser) we
+ * fall back to Origin, and refuse when neither is present rather than assuming
+ * the request is safe.
+ */
+export function isSameOriginRequest(request: Request, appOrigin: string) {
+  const secFetchSite = request.headers.get("sec-fetch-site");
+
+  if (secFetchSite) {
+    return secFetchSite === "same-origin";
+  }
+
+  const origin = request.headers.get("origin");
+
+  return origin !== null && origin === appOrigin;
+}
+
 export function getRequestMetadata(request: Request) {
   const ip = getClientIp(request);
   const userAgentRaw = request.headers.get("user-agent");

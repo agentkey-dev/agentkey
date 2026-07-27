@@ -1,7 +1,7 @@
 import type { CloudflareEnv } from "@/lib/db/client";
 import { getCloudflareEnv } from "@/lib/db/client";
 import { isProductionAppEnvironment } from "@/lib/env";
-import { AppError } from "@/lib/http";
+import { AppError, getClientIp } from "@/lib/http";
 
 export const MAGIC_LINK_TURNSTILE_ACTION = "magic_link";
 const PRODUCTION_TURNSTILE_HOSTNAME = "agentkey.dev";
@@ -46,9 +46,8 @@ export async function verifyTurnstileForAuth({
   const formData = new FormData();
   formData.set("secret", secret);
   formData.set("response", token);
-  const ip =
-    request.headers.get("cf-connecting-ip") ||
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  // Shared hardened resolver — never the leftmost X-Forwarded-For entry.
+  const ip = getClientIp(request);
 
   if (ip) {
     formData.set("remoteip", ip);

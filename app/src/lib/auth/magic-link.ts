@@ -1,18 +1,23 @@
 import { createHash } from "node:crypto";
 
+import { getClientIp } from "@/lib/http";
 import { enforceRateLimit } from "@/lib/ratelimit";
 
 function hashRateLimitSubject(value: string) {
   return createHash("sha256").update(value).digest("hex").slice(0, 32);
 }
 
+/**
+ * Delegates to the shared hardened resolver rather than re-deriving the IP.
+ *
+ * The previous local implementation fell back to the LEFTMOST X-Forwarded-For
+ * entry, which is client-supplied — the exact anti-pattern getClientIp exists
+ * to prevent. On Cloudflare cf-connecting-ip is normally present so the
+ * fallback rarely fired, but keeping two different notions of "client IP" in
+ * one codebase is how the hardened one silently stops being the one that runs.
+ */
 export function getMagicLinkClientIp(request: Pick<Request, "headers">) {
-  return (
-    request.headers.get("cf-connecting-ip") ||
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
-    "unknown"
-  );
+  return getClientIp(request as Request) || "unknown";
 }
 
 export function getMagicLinkRateLimitSubjects(

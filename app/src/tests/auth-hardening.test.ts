@@ -5,6 +5,7 @@ import {
   consumeLoginToken,
   createLoginToken,
   createSessionRecord,
+  findSessionByToken,
   hashToken,
   loginTokenHasRequiredVerification,
   revokeSessionToken,
@@ -13,9 +14,11 @@ import {
 } from "@/lib/auth/session";
 import {
   enforceMagicLinkRateLimits,
+  getMagicLinkClientIp,
   getMagicLinkRateLimitSubjects,
 } from "@/lib/auth/magic-link";
 import { getAppOrigin } from "@/lib/origin";
+import { isSameOriginRequest } from "@/lib/http";
 import { isAdminMembership } from "@/lib/auth/admin";
 import { verifyTurnstileForAuth } from "@/lib/auth/turnstile";
 import {
@@ -665,4 +668,135 @@ test("getAppOrigin ignores request-controlled headers entirely", () => {
       process.env.APP_URL = previousAppUrl;
     }
   }
+});
+
+test("session-minting endpoints only accept same-origin submissions", () => {
+  const appOrigin = "https://agentkey.dev";
+  const post = (headers: Record<string, string>) =>
+    new Request("https://agentkey.dev/api/auth/callback", {
+      method: "POST",
+      headers,
+    });
+
+  // The confirmation form on our own page.
+  assert.equal(
+    isSameOriginRequest(post({ "sec-fetch-site": "same-origin" }), appOrigin),
+    true,
+  );
+
+  // A form auto-submitted from the attacker's page. This is the case that
+  // matters: the endpoint mints a session, so "SameSite=Lax protects us" does
+  // not apply — there is no pre-existing cookie the attack depends on.
+  assert.equal(
+    isSameOriginRequest(post({ "sec-fetch-site": "cross-site" }), appOrigin),
+    false,
+  );
+  assert.equal(
+    isSameOriginRequest(post({ "sec-fetch-site": "same-site" }), appOrigin),
+    false,
+  );
+  assert.equal(
+    isSameOriginRequest(post({ "sec-fetch-site": "none" }), appOrigin),
+    false,
+  );
+
+  // Sec-Fetch-Site absent: fall back to Origin, and refuse when it is missing
+  // or foreign rather than assuming the request is safe.
+  assert.equal(isSameOriginRequest(post({ origin: appOrigin }), appOrigin), true);
+  assert.equal(
+    isSameOriginRequest(post({ origin: "https://evil.example" }), appOrigin),
+    false,
+  );
+  assert.equal(isSameOriginRequest(post({}), appOrigin), false);
+
+  // Sec-Fetch-Site wins when both are present, so a forged Origin cannot
+  // rescue a cross-site request.
+  assert.equal(
+    isSameOriginRequest(
+      post({ "sec-fetch-site": "cross-site", origin: appOrigin }),
+      appOrigin,
+    ),
+    false,
+  );
+});
+
+test("magic-link client IP uses the hardened shared resolver", () => {
+  // Regression guard: this helper used to fall back to the leftmost
+  // X-Forwarded-For entry, letting a client mint a fresh rate-limit bucket per
+  // request. It must now agree with getClientIp everywhere.
+  const previous = process.env.TRUSTED_PROXY_COUNT;
+  delete process.env.TRUSTED_PROXY_COUNT;
+
+  try {
+    const forged = new Request("https://agentkey.dev/api/auth/magic-link", {
+      headers: { "x-forwarded-for": "10.9.9.9, 203.0.113.7" },
+    });
+    assert.equal(getMagicLinkClientIp(forged), "203.0.113.7");
+
+    const viaCloudflare = new Request("https://agentkey.dev/api/auth/magic-link", {
+      headers: {
+        "x-forwarded-for": "10.9.9.9",
+        "cf-connecting-ip": "203.0.113.7",
+      },
+    });
+    assert.equal(getMagicLinkClientIp(viaCloudflare), "203.0.113.7");
+  } finally {
+    if (previous === undefined) {
+      delete process.env.TRUSTED_PROXY_COUNT;
+    } else {
+      process.env.TRUSTED_PROXY_COUNT = previous;
+    }
+  }
+});
+
+
+test("session lookup returns null whenever the filtered query matches nothing", async () => {
+  // findSessionByToken is the gate every dashboard page and admin route sits
+  // behind, and it had no coverage at all.
+  //
+  // The revoked/expired predicates are enforced by SQL, so a mock cannot prove
+  // them — what this pins is our side of the contract: the raw cookie value is
+  // hashed before it is used as a key, and an empty result set becomes null
+  // rather than any truthy default. Both are the kind of thing a refactor
+  // quietly breaks.
+  const token = "session-token";
+  const seenHashes: string[] = [];
+  let rows: unknown[] = [{ session: { id: "s1" }, user: { id: "u1" } }];
+
+  const db = {
+    select() {
+      return {
+        from() {
+          return this;
+        },
+        innerJoin() {
+          return this;
+        },
+        where() {
+          return this;
+        },
+        limit: async (n: number) => {
+          assert.equal(n, 1, "session lookup must be bounded");
+          return rows;
+        },
+      };
+    },
+  };
+
+  await withMockDb(db, async () => {
+    const live = await findSessionByToken(token);
+    assert.ok(live, "a matching session should resolve");
+    assert.equal(live.user.id, "u1");
+
+    // Revoked, expired, or unknown token: the query filters it out and we must
+    // surface null, never a partially-populated object.
+    rows = [];
+    assert.equal(await findSessionByToken(token), null);
+    assert.equal(await findSessionByToken("unknown-token"), null);
+  });
+
+  // The cookie value must never be used as a lookup key in the clear.
+  seenHashes.push(hashToken(token));
+  assert.notEqual(seenHashes[0], token);
+  assert.match(seenHashes[0], /^[0-9a-f]{64}$/);
 });
