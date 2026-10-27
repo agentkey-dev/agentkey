@@ -7,6 +7,7 @@ import {
   dispatchToolSuggestionNotifications,
   formatAccessRequestNotification,
   formatToolSuggestionNotification,
+  sendNotificationWebhook,
   validateDiscordWebhook,
   validateSlackWebhook,
 } from "@/lib/core/notifications";
@@ -29,6 +30,45 @@ test("invalid webhook hosts are rejected", () => {
     () => validateDiscordWebhook("https://example.com/api/webhooks/123/secret"),
     /Discord webhook/,
   );
+});
+
+test("webhook validation rejects userinfo, custom ports and fragments", () => {
+  for (const validate of [validateSlackWebhook, validateDiscordWebhook]) {
+    const base = validate === validateSlackWebhook
+      ? "https://hooks.slack.com/services/T1/B1/secret"
+      : "https://discord.com/api/webhooks/123/secret";
+    for (const mutation of ["userinfo", "port", "fragment"]) {
+      const url = new URL(base);
+      if (mutation === "userinfo") url.username = "secret";
+      if (mutation === "port") url.port = "8443";
+      if (mutation === "fragment") url.hash = "secret";
+      assert.throws(() => validate(url.toString()), /unmodified/);
+    }
+  }
+});
+
+test("webhook delivery errors never persist token-bearing URLs or remote response bodies", async () => {
+  const webhook = "https://hooks.slack.com/services/T1/B1/sensitive-token";
+  const failedResponse = await sendNotificationWebhook("slack", webhook, "message",
+    async () => new Response(`Rejected token ${webhook}`, { status: 403 }));
+  assert.equal(failedResponse.error, "HTTP 403");
+  const failedFetch = await sendNotificationWebhook("slack", webhook, "message",
+    async () => { throw new TypeError(`Request failed: ${webhook}`); });
+  assert.equal(failedFetch.error, "Webhook delivery failed.");
+  assert.equal(JSON.stringify([failedResponse, failedFetch]).includes("sensitive-token"), false);
+});
+
+test("Discord delivery disables automatic mentions and refuses redirects", async () => {
+  let payload: unknown;
+  const result = await sendNotificationWebhook("discord",
+    "https://discord.com/api/webhooks/123/secret", "@everyone <@123>",
+    async (_url, init) => {
+      payload = JSON.parse(String(init?.body));
+      assert.equal(init?.redirect, "error");
+      return new Response(null, { status: 204 });
+    });
+  assert.equal(result.status, "success");
+  assert.deepEqual(payload, { content: "@everyone <@123>", allowed_mentions: { parse: [] } });
 });
 
 test("notification settings preserve existing destinations unless replaced or cleared", () => {

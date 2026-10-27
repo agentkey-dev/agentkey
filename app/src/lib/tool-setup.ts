@@ -7,6 +7,9 @@ export type ToolSetupFormState = {
   authType: ToolAuthType;
   credentialMode: ToolCredentialMode;
   credential: string;
+  loginUsername: string;
+  loginPassword: string;
+  totpSecret: string;
   instructions: string;
 };
 
@@ -17,6 +20,9 @@ export const EMPTY_TOOL_SETUP_FORM: ToolSetupFormState = {
   authType: "api_key",
   credentialMode: "shared",
   credential: "",
+  loginUsername: "",
+  loginPassword: "",
+  totpSecret: "",
   instructions: "",
 };
 
@@ -62,11 +68,26 @@ export function withCredentialMode(
     ...form,
     credentialMode,
     credential: credentialMode === "per_agent" ? "" : form.credential,
+    loginUsername: credentialMode === "per_agent" ? "" : form.loginUsername,
+    loginPassword: credentialMode === "per_agent" ? "" : form.loginPassword,
+    totpSecret: credentialMode === "per_agent" ? "" : form.totpSecret,
   };
 }
 
 export function canContinueFromGuideStep(form: ToolSetupFormState) {
-  return form.credentialMode === "per_agent" || form.credential.trim().length > 0;
+  if (form.credentialMode === "per_agent") {
+    return true;
+  }
+
+  if (form.authType === "login") {
+    return (
+      (form.loginUsername.trim().length > 0 &&
+        form.loginPassword.trim().length > 0) ||
+      form.credential.trim().length > 0
+    );
+  }
+
+  return form.credential.trim().length > 0;
 }
 
 export function applyToolDraft(

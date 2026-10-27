@@ -28,6 +28,11 @@ import {
   OPTIONS as optionsRequestSchema,
 } from "@/app/api/tools/[toolId]/request/route";
 
+async function assertHasSchema(response: Response) {
+  const body: unknown = await response.json();
+  assert.ok(body && typeof body === "object" && "schema" in body && body.schema);
+}
+
 test("readJsonBody rejects malformed JSON with a correction hint", async () => {
   const request = new Request("https://agentkey.test/api/tools/suggest", {
     method: "POST",
@@ -144,7 +149,7 @@ test("schema discovery GET and OPTIONS handlers remain available on suggest", as
     const getResponse = await getSuggestSchema(getRequest);
 
     assert.equal(getResponse.status, 200);
-    assert.ok((await getResponse.json()).schema);
+    await assertHasSchema(getResponse);
     assert.equal(
       getResponse.headers.get("Access-Control-Allow-Origin"),
       "https://agent-ui.example.com",
@@ -187,7 +192,7 @@ test("schema discovery GET and OPTIONS handlers remain available on request", as
     const getResponse = await getRequestSchema(getRequest);
 
     assert.equal(getResponse.status, 200);
-    assert.ok((await getResponse.json()).schema);
+    await assertHasSchema(getResponse);
 
     const optionsRequest = new Request(
       "https://agentkey.test/api/tools/tool-id/request",
@@ -226,7 +231,7 @@ test("schema discovery GET and OPTIONS handlers remain available on instruction 
     const getResponse = await getInstructionSuggestSchema(getRequest);
 
     assert.equal(getResponse.status, 200);
-    assert.ok((await getResponse.json()).schema);
+    await assertHasSchema(getResponse);
 
     const optionsRequest = new Request(
       "https://agentkey.test/api/tools/tool-id/instructions/suggest",

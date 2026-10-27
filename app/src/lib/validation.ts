@@ -1,8 +1,32 @@
 import { z } from "zod";
 import { AppError } from "@/lib/http";
 import { normalizeToolUrl } from "@/lib/tool-branding";
+import { parseTotpSecretInput } from "@/lib/totp";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function validateOptionalTotpSecret(
+  totpSecret: string | undefined,
+  ctx: z.RefinementCtx,
+  path: Array<string | number> = ["totpSecret"],
+) {
+  if (!totpSecret) {
+    return;
+  }
+
+  try {
+    parseTotpSecretInput(totpSecret);
+  } catch (error) {
+    ctx.addIssue({
+      code: "custom",
+      message:
+        error instanceof AppError
+          ? error.message
+          : "Invalid TOTP secret.",
+      path,
+    });
+  }
+}
 
 export function assertValidUuid(value: string, label = "ID") {
   if (!UUID_RE.test(value)) {
@@ -37,9 +61,10 @@ export const createToolSchema = z
         (value) => value === undefined || value === "" || !!normalizeToolUrl(value),
         "Enter a valid HTTP or HTTPS URL.",
       ),
-    authType: z.enum(["api_key", "oauth_token", "bot_token", "other"]),
+    authType: z.enum(["api_key", "oauth_token", "bot_token", "login", "other"]),
     credentialMode: z.enum(["shared", "per_agent"]),
     credential: z.string().trim().optional(),
+    totpSecret: z.string().trim().max(500).optional(),
     instructions: z.string().trim().max(4000).optional(),
     sourceSuggestionId: z.string().uuid().optional(),
   })
@@ -59,26 +84,45 @@ export const createToolSchema = z
         path: ["credential"],
       });
     }
+
+    if (value.credentialMode === "per_agent" && value.totpSecret) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Per-agent tools cannot store a shared TOTP secret.",
+        path: ["totpSecret"],
+      });
+    }
+
+    validateOptionalTotpSecret(value.totpSecret, ctx);
   });
 
-export const updateToolSchema = z.object({
-  name: z.string().trim().min(2).max(120).optional(),
-  description: z.string().trim().max(500).optional(),
-  url: z
-    .string()
-    .trim()
-    .max(500)
-    .optional()
-    .refine(
-      (value) => value === undefined || value === "" || !!normalizeToolUrl(value),
-      "Enter a valid HTTP or HTTPS URL.",
-    ),
-  credential: z.string().trim().optional(),
-  instructions: z.string().trim().max(4000).optional(),
-  credentialExpiresAt: z.string().datetime().nullable().optional(),
-  acceptedInstructionSuggestionId: z.string().uuid().optional(),
-  restoreInstructionVersionId: z.string().uuid().optional(),
-});
+export const updateToolSchema = z
+  .object({
+    name: z.string().trim().min(2).max(120).optional(),
+    description: z.string().trim().max(500).optional(),
+    url: z
+      .string()
+      .trim()
+      .max(500)
+      .optional()
+      .refine(
+        (value) => value === undefined || value === "" || !!normalizeToolUrl(value),
+        "Enter a valid HTTP or HTTPS URL.",
+      ),
+    authType: z
+      .enum(["api_key", "oauth_token", "bot_token", "login", "other"])
+      .optional(),
+    credential: z.string().trim().optional(),
+    totpSecret: z.string().trim().max(500).optional(),
+    clearTotpSecret: z.boolean().optional(),
+    instructions: z.string().trim().max(4000).optional(),
+    credentialExpiresAt: z.string().datetime().nullable().optional(),
+    acceptedInstructionSuggestionId: z.string().uuid().optional(),
+    restoreInstructionVersionId: z.string().uuid().optional(),
+  })
+  .superRefine((value, ctx) => {
+    validateOptionalTotpSecret(value.totpSecret, ctx);
+  });
 
 export const requestAccessSchema = z.object({
   reason: z.string().trim().min(5).max(500),
@@ -112,14 +156,24 @@ export const suggestToolInstructionSchema = z.object({
   why: z.string().trim().min(5).max(2000),
 });
 
-export const approveRequestSchema = z.object({
-  credential: z.string().trim().optional(),
-});
+export const approveRequestSchema = z
+  .object({
+    credential: z.string().trim().optional(),
+    totpSecret: z.string().trim().max(500).optional(),
+  })
+  .superRefine((value, ctx) => {
+    validateOptionalTotpSecret(value.totpSecret, ctx);
+  });
 
-export const assignToolToAgentSchema = z.object({
-  toolId: z.string().uuid(),
-  credential: z.string().trim().optional(),
-});
+export const assignToolToAgentSchema = z
+  .object({
+    toolId: z.string().uuid(),
+    credential: z.string().trim().optional(),
+    totpSecret: z.string().trim().max(500).optional(),
+  })
+  .superRefine((value, ctx) => {
+    validateOptionalTotpSecret(value.totpSecret, ctx);
+  });
 
 export const denyRequestSchema = z.object({
   reason: z.string().trim().max(500).optional(),

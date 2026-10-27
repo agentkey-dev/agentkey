@@ -8,9 +8,6 @@ const isDev = process.env.NODE_ENV !== "production";
 const scriptSrc = [
   "'self'",
   "https://challenges.cloudflare.com",
-  "https://maps.googleapis.com",
-  "https://js.stripe.com",
-  "https://*.js.stripe.com",
   "'unsafe-inline'",
   isDev ? "'unsafe-eval'" : null,
 ]
@@ -20,14 +17,15 @@ const scriptSrc = [
 const contentSecurityPolicy = [
   "default-src 'self'",
   `script-src ${scriptSrc}`,
+  "script-src-attr 'none'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https://*.brandfetch.io https://cdn.brandfetch.io",
   "font-src 'self' data:",
-  "connect-src 'self' https://api.stripe.com https://maps.googleapis.com https://api.brandfetch.io",
-  "frame-src 'self' https://challenges.cloudflare.com https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com https://www.loom.com",
+  "connect-src 'self' https://challenges.cloudflare.com https://api.brandfetch.io",
+  "frame-src 'self' https://challenges.cloudflare.com https://www.loom.com",
   "worker-src 'self'",
   "object-src 'none'",
-  "base-uri 'self'",
+  "base-uri 'none'",
   "form-action 'self'",
   "frame-ancestors 'none'",
 ].join("; ");
@@ -48,10 +46,18 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  poweredByHeader: false,
   headers: async () => [
     {
       source: "/(.*)",
       headers: securityHeaders,
+    },
+    {
+      source: "/api/:path*",
+      headers: [
+        { key: "Cache-Control", value: "no-store, private" },
+        { key: "Pragma", value: "no-cache" },
+      ],
     },
   ],
 };

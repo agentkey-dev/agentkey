@@ -74,7 +74,7 @@ Draft a SaaS tool config for AgentKey. The "instructions" field is sent to AI ag
 Fields to return:
 - name: product name
 - description: one sentence, what the tool does
-- authType: api_key, oauth_token, bot_token, or other
+- authType: api_key, login, oauth_token, bot_token, or other
 - url: public product URL (e.g. https://github.com), not the API URL
 - instructions: concise technical reference (under 20 lines) — auth header format, API base URL, 3-5 key endpoints, rate limits if relevant. Put API base URLs here, not in "url".
 - warnings: facts you're uncertain about or caveats the admin should verify. Empty array if confident.

@@ -3,11 +3,15 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { unwrapResponseData } from "@/components/dashboard/api";
 import { buildInstructionSuggestionDraft } from "@/lib/core/tool-instruction-suggestions";
-import type { ToolCatalogItem } from "@/lib/tool-catalog";
+import type { ToolAuthType, ToolCatalogItem } from "@/lib/tool-catalog";
 import type {
   PendingInstructionSuggestionDetail,
   ToolInstructionHistoryEntry,
 } from "@/lib/services/tool-instructions";
+import {
+  detectPlaintextSecretInInstructions,
+  serializeLoginCredential,
+} from "@/lib/totp";
 
 function getErrorMessage(payload: unknown) {
   if (
@@ -70,6 +74,11 @@ export function ToolUpdateForm({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [authType, setAuthType] = useState<ToolAuthType>(tool.authType);
+  const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [totpSecret, setTotpSecret] = useState("");
+  const [clearTotpSecret, setClearTotpSecret] = useState(false);
   const [instructionsValue, setInstructionsValue] = useState(initialInstructionsValue);
   const [acceptedInstructionSuggestionId, setAcceptedInstructionSuggestionId] =
     useState<string | null>(
@@ -78,6 +87,7 @@ export function ToolUpdateForm({
   const [restoreInstructionVersionId, setRestoreInstructionVersionId] =
     useState<string | null>(null);
   const instructionsRef = useRef<HTMLTextAreaElement | null>(null);
+  const secretWarning = detectPlaintextSecretInInstructions(instructionsValue);
 
   useEffect(() => {
     if (!autoFocusInstructions || !instructionsRef.current) {
@@ -113,12 +123,31 @@ export function ToolUpdateForm({
         event.preventDefault();
         const form = event.currentTarget;
         const formData = new FormData(form);
+        const rawCredential = String(formData.get("credential") ?? "");
+        const resolvedCredential =
+          authType === "login" && loginUsername.trim() && loginPassword
+            ? serializeLoginCredential({
+                username: loginUsername.trim(),
+                password: loginPassword,
+              })
+            : rawCredential;
         const payload = {
           name: String(formData.get("name") ?? ""),
           description: String(formData.get("description") ?? ""),
           url: String(formData.get("url") ?? ""),
+          authType,
           instructions: instructionsValue,
-          credential: String(formData.get("credential") ?? ""),
+          credential: resolvedCredential,
+          totpSecret:
+            tool.credentialMode === "shared" &&
+            !clearTotpSecret &&
+            totpSecret.trim()
+              ? totpSecret.trim()
+              : undefined,
+          clearTotpSecret:
+            tool.credentialMode === "shared" && clearTotpSecret
+              ? true
+              : undefined,
           credentialExpiresAt:
             tool.credentialMode === "shared"
               ? getEndOfDayIso(String(formData.get("credentialExpiresAt") ?? ""))
@@ -144,6 +173,10 @@ export function ToolUpdateForm({
           }
 
           const updated = unwrapResponseData<ToolCatalogItem>(data);
+          setTotpSecret("");
+          setClearTotpSecret(false);
+          setLoginUsername("");
+          setLoginPassword("");
           setSaved(true);
           setTimeout(() => setSaved(false), 3000);
           onUpdated?.({
@@ -170,15 +203,33 @@ export function ToolUpdateForm({
           className="border border-white/10 bg-surface px-3 py-2 text-sm text-on-surface outline-none focus:border-primary"
         />
       </label>
-      <label className="grid gap-1.5 text-sm text-on-surface-variant">
-        URL
-        <input
-          name="url"
-          defaultValue={tool.url ?? ""}
-          className="border border-white/10 bg-surface px-3 py-2 text-sm text-on-surface outline-none focus:border-primary"
-          placeholder="https://linear.app"
-        />
-      </label>
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="grid gap-1.5 text-sm text-on-surface-variant">
+          URL
+          <input
+            name="url"
+            defaultValue={tool.url ?? ""}
+            className="border border-white/10 bg-surface px-3 py-2 text-sm text-on-surface outline-none focus:border-primary"
+            placeholder="https://linear.app"
+          />
+        </label>
+        <label className="grid gap-1.5 text-sm text-on-surface-variant">
+          Auth type
+          <select
+            value={authType}
+            onChange={(event) =>
+              setAuthType(event.target.value as ToolAuthType)
+            }
+            className="border border-white/10 bg-surface px-3 py-2 text-sm text-on-surface outline-none focus:border-primary"
+          >
+            <option value="api_key">API key</option>
+            <option value="login">Login (username + password)</option>
+            <option value="oauth_token">OAuth token</option>
+            <option value="bot_token">Bot token</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+      </div>
       <div className="space-y-1">
         <label htmlFor={`instructions-${tool.id}`} className="text-xs text-on-surface-variant">
           Usage guide for agents (sent with credential)
@@ -223,6 +274,27 @@ export function ToolUpdateForm({
           className="w-full border border-white/10 bg-surface px-3 py-2 font-mono text-sm text-on-surface outline-none focus:border-primary"
           placeholder={`How to use this tool: auth method, base URLs, IDs, conventions, rules...`}
         />
+        {secretWarning ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100">
+            <span>{secretWarning.warning}</span>
+            {secretWarning.extractedTotpSecret &&
+            tool.credentialMode === "shared" ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setClearTotpSecret(false);
+                  setTotpSecret(secretWarning.extractedTotpSecret!);
+                  if (secretWarning.cleanedInstructions !== undefined) {
+                    setInstructionsValue(secretWarning.cleanedInstructions);
+                  }
+                }}
+                className="shrink-0 border border-amber-400/40 bg-amber-400/15 px-2.5 py-1 font-medium text-amber-100 transition-colors hover:bg-amber-400/25"
+              >
+                Extract to encrypted 2FA field
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       <section className="space-y-3 border border-white/10 bg-surface p-4">
         <div className="text-[11px] uppercase tracking-[0.2em] text-on-surface-variant">
@@ -290,24 +362,116 @@ export function ToolUpdateForm({
               you rotate it.
             </span>
           </label>
-          <label className="grid gap-1.5 text-sm text-on-surface-variant">
-            Rotate shared credential
+          {authType === "login" ? (
+            <div className="space-y-2 border border-white/10 bg-surface p-3">
+              <div className="text-xs font-medium text-on-surface">
+                Rotate shared login credential
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="grid gap-1 text-xs text-on-surface-variant">
+                  Username / email
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    value={loginUsername}
+                    onChange={(event) => setLoginUsername(event.target.value)}
+                    className="border border-white/10 bg-surface-container px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
+                    placeholder="Leave blank to keep current"
+                  />
+                </label>
+                <label className="grid gap-1 text-xs text-on-surface-variant">
+                  Password
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={loginPassword}
+                    onChange={(event) => setLoginPassword(event.target.value)}
+                    className="border border-white/10 bg-surface-container px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
+                    placeholder="Leave blank to keep current"
+                  />
+                </label>
+              </div>
+              <p className="text-xs text-on-surface-variant/70">
+                Vended as structured{" "}
+                <code className="font-mono text-primary">
+                  &#123; username, password &#125;
+                </code>{" "}
+                on next fetch.
+              </p>
+            </div>
+          ) : (
+            <label className="grid gap-1.5 text-sm text-on-surface-variant">
+              Rotate shared credential
+              <input
+                name="credential"
+                type="password"
+                autoComplete="off"
+                className="border border-white/10 bg-surface px-3 py-2 font-mono text-sm text-on-surface outline-none focus:border-primary"
+                placeholder={
+                  authType === "oauth_token"
+                    ? 'Paste new JSON to rotate, e.g. {"client_id": "...", "refresh_token": "..."}'
+                    : "Paste new credential to rotate (leave blank to keep current)"
+                }
+              />
+              <span className="text-xs text-on-surface-variant/70">
+                All agents get the new credential on their next fetch. No
+                disruption.
+              </span>
+            </label>
+          )}
+          <div className="space-y-2 border border-white/10 bg-surface p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-xs font-medium text-on-surface">
+                <span>2FA / TOTP secret</span>
+                {tool.totpConfigured && !clearTotpSecret ? (
+                  <span className="border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-emerald-300">
+                    2FA active
+                  </span>
+                ) : (
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-on-surface-variant/60">
+                    optional · zero seed exposure
+                  </span>
+                )}
+              </div>
+              {tool.totpConfigured ? (
+                <label className="flex items-center gap-1.5 text-xs text-rose-300">
+                  <input
+                    type="checkbox"
+                    checked={clearTotpSecret}
+                    onChange={(event) => {
+                      setClearTotpSecret(event.target.checked);
+                      if (event.target.checked) {
+                        setTotpSecret("");
+                      }
+                    }}
+                  />
+                  Remove 2FA secret on save
+                </label>
+              ) : null}
+            </div>
             <input
-              name="credential"
               type="password"
               autoComplete="off"
-              className="border border-white/10 bg-surface px-3 py-2 font-mono text-sm text-on-surface outline-none focus:border-primary"
+              disabled={clearTotpSecret}
+              value={totpSecret}
+              onChange={(event) => setTotpSecret(event.target.value)}
+              className="w-full border border-white/10 bg-surface-container px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary disabled:opacity-50"
               placeholder={
-                tool.authType === "oauth_token"
-                  ? 'Paste new JSON to rotate, e.g. {"client_id": "...", "refresh_token": "..."}'
-                  : "Paste new credential to rotate (leave blank to keep current)"
+                tool.totpConfigured
+                  ? "Paste new Base32 secret or otpauth:// URI to rotate (leave blank to keep current)"
+                  : "Paste Base32 secret (e.g. JBSWY3DPEHPK3PXP) or otpauth://totp/... to enable 2FA"
               }
             />
-            <span className="text-xs text-on-surface-variant/70">
-              All agents get the new credential on their next fetch. No
-              disruption.
-            </span>
-          </label>
+            <p className="text-xs text-on-surface-variant/70">
+              AgentKey stores the seed encrypted and computes live 6-digit codes
+              in memory (vended via{" "}
+              <code className="font-mono text-primary">otp.code</code> and{" "}
+              <code className="font-mono text-primary">
+                GET /api/tools/&#123;id&#125;/otp
+              </code>
+              ). Agents never see the raw seed.
+            </p>
+          </div>
         </>
       ) : null}
       {error ? <p className="text-sm text-rose-300">{error}</p> : null}

@@ -27,7 +27,7 @@ function resolveEncryptionKey() {
 export function encryptSecret(plaintext: string) {
   const key = resolveEncryptionKey();
   const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const cipher = createCipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
   const encrypted = Buffer.concat([
     cipher.update(plaintext, "utf8"),
     cipher.final(),
@@ -40,10 +40,13 @@ export function encryptSecret(plaintext: string) {
 export function decryptSecret(payload: string) {
   const key = resolveEncryptionKey();
   const buffer = Buffer.from(payload, "base64url");
+  if (buffer.length < 28 || buffer.toString("base64url") !== payload) {
+    throw new Error("Invalid encrypted credential payload.");
+  }
   const iv = buffer.subarray(0, 12);
   const tag = buffer.subarray(12, 28);
   const encrypted = buffer.subarray(28);
-  const decipher = createDecipheriv("aes-256-gcm", key, iv);
+  const decipher = createDecipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
 
   decipher.setAuthTag(tag);
 
@@ -52,4 +55,3 @@ export function decryptSecret(payload: string) {
     decipher.final(),
   ]).toString("utf8");
 }
-

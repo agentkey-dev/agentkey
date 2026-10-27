@@ -29,6 +29,7 @@ import type {
   PendingInstructionSuggestionDetail,
   ToolInstructionHistoryEntry,
 } from "@/lib/services/tool-instructions";
+import { serializeLoginCredential } from "@/lib/totp";
 
 type RecentToolActivityEvent = {
   id: string;
@@ -398,11 +399,14 @@ function AgentToggleRow({
   toolAuthType: ToolAuthType;
   toolName: string;
   disabled: boolean;
-  onAssign: (credential: string) => Promise<boolean>;
+  onAssign: (credential: string, totpSecret?: string) => Promise<boolean>;
   onRevoke: () => Promise<boolean>;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [credential, setCredential] = useState("");
+  const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [totpSecret, setTotpSecret] = useState("");
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isGranted = row.state === "granted";
@@ -432,16 +436,36 @@ function AgentToggleRow({
   }
 
   async function confirmCredentialAssign() {
-    if (credential.trim().length === 0) {
-      setError("Credential is required.");
+    const resolvedCredential =
+      toolAuthType === "login"
+        ? loginUsername.trim() && loginPassword
+          ? serializeLoginCredential({
+              username: loginUsername.trim(),
+              password: loginPassword,
+            })
+          : ""
+        : credential.trim();
+
+    if (resolvedCredential.length === 0) {
+      setError(
+        toolAuthType === "login"
+          ? "Username and password are required."
+          : "Credential is required.",
+      );
       return;
     }
     setError(null);
     setIsPending(true);
-    const ok = await onAssign(credential);
+    const ok = await onAssign(
+      resolvedCredential,
+      totpSecret.trim() || undefined,
+    );
     setIsPending(false);
     if (ok) {
       setCredential("");
+      setLoginUsername("");
+      setLoginPassword("");
+      setTotpSecret("");
       setIsExpanded(false);
     } else {
       setError("Grant failed.");
@@ -476,7 +500,29 @@ function AgentToggleRow({
       </div>
       {isExpanded && !isGranted && needsCredential ? (
         <div className="space-y-2 border border-white/10 bg-surface-container-low px-3 py-3">
-          {toolAuthType === "oauth_token" ? (
+          {toolAuthType === "login" ? (
+            <div className="grid gap-2 md:grid-cols-2">
+              <input
+                type="text"
+                value={loginUsername}
+                onChange={(event) => setLoginUsername(event.target.value)}
+                autoFocus
+                autoComplete="off"
+                disabled={isPending}
+                className="w-full border border-white/10 bg-surface px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
+                placeholder="Username / email"
+              />
+              <input
+                type="password"
+                value={loginPassword}
+                onChange={(event) => setLoginPassword(event.target.value)}
+                autoComplete="off"
+                disabled={isPending}
+                className="w-full border border-white/10 bg-surface px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
+                placeholder="Password"
+              />
+            </div>
+          ) : toolAuthType === "oauth_token" ? (
             <textarea
               value={credential}
               onChange={(event) => setCredential(event.target.value)}
@@ -499,6 +545,15 @@ function AgentToggleRow({
               placeholder={`Paste ${toolName} credential for ${row.name}`}
             />
           )}
+          <input
+            type="password"
+            value={totpSecret}
+            onChange={(event) => setTotpSecret(event.target.value)}
+            autoComplete="off"
+            disabled={isPending}
+            className="w-full border border-white/10 bg-surface px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
+            placeholder="2FA / TOTP secret (optional — Base32 or otpauth://)"
+          />
           <div className="flex gap-1.5">
             <button
               type="button"
@@ -514,6 +569,9 @@ function AgentToggleRow({
               onClick={() => {
                 setIsExpanded(false);
                 setCredential("");
+                setLoginUsername("");
+                setLoginPassword("");
+                setTotpSecret("");
                 setError(null);
               }}
               className="inline-flex items-center justify-center px-3 py-1.5 text-xs text-on-surface-variant hover:text-on-surface"
@@ -542,6 +600,9 @@ function PendingAgentLine({
   onDenied: (agentId: string) => void;
 }) {
   const [credential, setCredential] = useState("");
+  const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [totpSecret, setTotpSecret] = useState("");
   const [reason, setReason] = useState("");
   const [isDenying, setIsDenying] = useState(false);
   const [isPending, setIsPending] = useState(false);
@@ -549,8 +610,23 @@ function PendingAgentLine({
   const needsCredential = tool.credentialMode === "per_agent";
 
   async function approve() {
-    if (needsCredential && credential.trim().length === 0) {
-      setError("Credential is required for per-agent tools.");
+    const resolvedCredential = needsCredential
+      ? tool.authType === "login"
+        ? loginUsername.trim() && loginPassword
+          ? serializeLoginCredential({
+              username: loginUsername.trim(),
+              password: loginPassword,
+            })
+          : ""
+        : credential.trim()
+      : "";
+
+    if (needsCredential && resolvedCredential.length === 0) {
+      setError(
+        tool.authType === "login"
+          ? "Username and password are required for per-agent login tools."
+          : "Credential is required for per-agent tools.",
+      );
       return;
     }
     setError(null);
@@ -561,7 +637,13 @@ function PendingAgentLine({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ credential: credential.trim() }),
+          body: JSON.stringify({
+            credential: resolvedCredential,
+            totpSecret:
+              needsCredential && totpSecret.trim()
+                ? totpSecret.trim()
+                : undefined,
+          }),
         },
       );
       const data = await response.json();
@@ -633,27 +715,59 @@ function PendingAgentLine({
         ) : null}
       </div>
       {!isDenying && needsCredential ? (
-        tool.authType === "oauth_token" ? (
-          <textarea
-            value={credential}
-            onChange={(event) => setCredential(event.target.value)}
-            rows={2}
-            disabled={disabled || isPending}
-            autoComplete="off"
-            className="w-full border border-white/10 bg-surface px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
-            placeholder='Per-agent credential as JSON'
-          />
-        ) : (
+        <div className="space-y-2">
+          {tool.authType === "login" ? (
+            <div className="grid gap-2 md:grid-cols-2">
+              <input
+                type="text"
+                value={loginUsername}
+                onChange={(event) => setLoginUsername(event.target.value)}
+                disabled={disabled || isPending}
+                autoComplete="off"
+                className="w-full border border-white/10 bg-surface px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
+                placeholder="Username / email"
+              />
+              <input
+                type="password"
+                value={loginPassword}
+                onChange={(event) => setLoginPassword(event.target.value)}
+                disabled={disabled || isPending}
+                autoComplete="off"
+                className="w-full border border-white/10 bg-surface px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
+                placeholder="Password"
+              />
+            </div>
+          ) : tool.authType === "oauth_token" ? (
+            <textarea
+              value={credential}
+              onChange={(event) => setCredential(event.target.value)}
+              rows={2}
+              disabled={disabled || isPending}
+              autoComplete="off"
+              className="w-full border border-white/10 bg-surface px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
+              placeholder="Per-agent credential as JSON"
+            />
+          ) : (
+            <input
+              type="password"
+              value={credential}
+              onChange={(event) => setCredential(event.target.value)}
+              disabled={disabled || isPending}
+              autoComplete="off"
+              className="w-full border border-white/10 bg-surface px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
+              placeholder={`Per-agent credential for ${row.agentName}`}
+            />
+          )}
           <input
             type="password"
-            value={credential}
-            onChange={(event) => setCredential(event.target.value)}
+            value={totpSecret}
+            onChange={(event) => setTotpSecret(event.target.value)}
             disabled={disabled || isPending}
             autoComplete="off"
             className="w-full border border-white/10 bg-surface px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
-            placeholder={`Per-agent credential for ${row.agentName}`}
+            placeholder="2FA / TOTP secret (optional — Base32 or otpauth://)"
           />
-        )
+        </div>
       ) : null}
       {isDenying ? (
         <div className="space-y-2">
@@ -755,7 +869,11 @@ function ToolAgentsPanel({
   const pendingCount = pendingRows.length;
   const hasNoAgents = agents.length === 0;
 
-  async function assign(row: AgentRow, credential: string): Promise<boolean> {
+  async function assign(
+    row: AgentRow,
+    credential: string,
+    totpSecret?: string,
+  ): Promise<boolean> {
     const isOptimistic = tool.credentialMode === "shared";
     if (isOptimistic) {
       onAgentGranted(row.id);
@@ -768,6 +886,10 @@ function ToolAgentsPanel({
           toolId: tool.id,
           credential:
             tool.credentialMode === "per_agent" ? credential.trim() : undefined,
+          totpSecret:
+            tool.credentialMode === "per_agent" && totpSecret?.trim()
+              ? totpSecret.trim()
+              : undefined,
         }),
       });
       const data = await response.json();
@@ -867,7 +989,9 @@ function ToolAgentsPanel({
                   toolAuthType={tool.authType}
                   toolName={tool.name}
                   disabled={false}
-                  onAssign={(credential) => assign(row, credential)}
+                  onAssign={(credential, totpSecret) =>
+                    assign(row, credential, totpSecret)
+                  }
                   onRevoke={() => revoke(row)}
                 />
               ))
@@ -1350,6 +1474,7 @@ export function ToolCatalogShell({
               >
                 <option value="all">All auth types</option>
                 <option value="api_key">API key</option>
+                <option value="login">Login</option>
                 <option value="oauth_token">OAuth token</option>
                 <option value="bot_token">Bot token</option>
                 <option value="other">Other</option>
@@ -1435,7 +1560,14 @@ export function ToolCatalogShell({
                         </div>
                       </td>
                       <td className="px-3 py-4 text-xs text-on-surface-variant">
-                        {tool.authType}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span>{tool.authType}</span>
+                          {tool.totpConfigured ? (
+                            <span className="border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-emerald-300">
+                              2FA
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="px-3 py-4">
                         <StatusBadge tone={getHealthTone(tool)}>
@@ -1511,6 +1643,9 @@ export function ToolCatalogShell({
                       <StatusBadge tone="default">
                         {selectedTool.authType}
                       </StatusBadge>
+                      {selectedTool.totpConfigured ? (
+                        <StatusBadge tone="success">2FA / TOTP</StatusBadge>
+                      ) : null}
                       <StatusBadge
                         tone={
                           selectedTool.credentialMode === "shared"

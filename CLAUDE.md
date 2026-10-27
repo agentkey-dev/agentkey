@@ -14,8 +14,9 @@ You have access to AgentKey, a central service that manages your credentials for
 
 ### Credential response
 The `/credentials` endpoint returns:
-- `credential` — the API key or token
-- `auth_type` — how to authenticate (api_key, oauth_token, bot_token)
+- `credential` — the API key/token string, or a structured `{"username", "password"}` object when `auth_type` is `login`
+- `auth_type` — how to authenticate (`api_key`, `login`, `oauth_token`, `bot_token`, `other`)
+- `otp` — *(when 2FA/TOTP is configured)* live computed `{"code", "expires_in_seconds", "period_seconds", "next_code"}` (or call `GET /api/tools/{tool_id}/otp` for a fresh code)
 - `instructions` — **read this carefully**. It contains company-specific context: API base URLs, relevant IDs (channel IDs, repo URLs, project keys), conventions, and rules for how to use this tool in this organization.
 
 ### Important

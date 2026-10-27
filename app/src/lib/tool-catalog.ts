@@ -24,6 +24,7 @@ export type ToolCatalogItem = {
   url: string | null;
   authType: ToolAuthType;
   credentialMode: ToolCredentialMode;
+  totpConfigured?: boolean;
   instructions: string | null;
   currentInstructionVersionId: string | null;
   credentialLastRotatedAt: Date | string | null;

@@ -40,6 +40,7 @@ export async function GET(request: Request) {
     return new NextResponse(body, {
       status: 200,
       headers: {
+        "Cache-Control": "no-store, private",
         "Content-Type": contentType,
         "Content-Disposition": `attachment; filename="tool-catalog.${extension}"`,
       },

@@ -13,6 +13,16 @@ export function isAdminMembership(membership: { role: string }) {
   return membership.role === "admin";
 }
 
+export function getAdminLandingPath(context: {
+  kind: "signed-out" | "missing-org" | "ready";
+}): "/dashboard" | "/onboarding" | null {
+  if (context.kind === "signed-out") {
+    return null;
+  }
+
+  return context.kind === "ready" ? "/dashboard" : "/onboarding";
+}
+
 export async function getAdminContext() {
   const session = await getCurrentSession();
 

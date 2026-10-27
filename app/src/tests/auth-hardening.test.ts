@@ -19,7 +19,10 @@ import {
 } from "@/lib/auth/magic-link";
 import { getAppOrigin } from "@/lib/origin";
 import { isSameOriginRequest } from "@/lib/http";
-import { isAdminMembership } from "@/lib/auth/admin";
+import {
+  getAdminLandingPath,
+  isAdminMembership,
+} from "@/lib/auth/admin";
 import { verifyTurnstileForAuth } from "@/lib/auth/turnstile";
 import {
   authLoginTokens,
@@ -506,6 +509,12 @@ test("session records are hashed and expiring before the cookie is set", async (
       "2026-06-17T10:00:00.000Z",
     );
   });
+});
+
+test("public entry pages return authenticated admins to the application", () => {
+  assert.equal(getAdminLandingPath({ kind: "ready" }), "/dashboard");
+  assert.equal(getAdminLandingPath({ kind: "missing-org" }), "/onboarding");
+  assert.equal(getAdminLandingPath({ kind: "signed-out" }), null);
 });
 
 test("sign-out revocation marks the session token revoked", async () => {

@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { HeroTerminal } from "@/components/hero-terminal";
+import { getAdminContext, getAdminLandingPath } from "@/lib/auth/admin";
 import { getAppOrigin } from "@/lib/origin";
 
 const homeDescription =
@@ -70,6 +72,12 @@ export const metadata: Metadata = {
 };
 
 export default async function Home() {
+  const destination = getAdminLandingPath(await getAdminContext());
+
+  if (destination) {
+    redirect(destination);
+  }
+
   const origin = getAppOrigin();
   const structuredData = {
     "@context": "https://schema.org",

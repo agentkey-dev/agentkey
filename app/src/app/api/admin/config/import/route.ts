@@ -6,6 +6,7 @@ import {
   jsonError,
   readTextBody,
 } from "@/lib/http";
+import { enforceRateLimit } from "@/lib/ratelimit";
 import {
   applyToolCatalogImport,
   previewToolCatalogImport,
@@ -22,6 +23,8 @@ export async function PUT(request: Request) {
     if (context.kind === "missing-org") {
       return jsonError("Select or create an organization first.", 409);
     }
+
+    await enforceRateLimit(context.userId, "admin");
 
     const url = new URL(request.url);
     const dryRun = url.searchParams.get("dryRun") === "1";

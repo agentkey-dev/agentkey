@@ -13,6 +13,7 @@ import {
 } from "@/lib/services/notifications";
 import { suggestToolInstruction as createToolInstructionSuggestion } from "@/lib/services/tool-instructions";
 import { suggestTool as createToolSuggestion } from "@/lib/services/tool-suggestions";
+import { generateTotpSnapshot } from "@/lib/totp-server";
 
 export async function listToolsForAgent(
   organizationId: string,
@@ -89,6 +90,7 @@ export async function requestAccess(
         reason,
         denialReason: null,
         credentialEncrypted: null,
+        totpSecretEncrypted: null,
         requestedAt,
         decidedByUserId: null,
         decidedByEmail: null,
@@ -153,6 +155,7 @@ export async function getCredentialForAgent(
   agentId: string,
   toolId: string,
   agentName: string,
+  requestMetadata?: { ip: string | null; userAgent: string | null },
 ) {
   const db = getDb();
   const tool = await db.query.tools.findFirst({
@@ -198,7 +201,26 @@ export async function getCredentialForAgent(
     throw new AppError("Credential is not configured.", 500);
   }
 
+  if (
+    tool.credentialMode === "shared" &&
+    tool.credentialExpiresAt &&
+    tool.credentialExpiresAt.getTime() <= Date.now()
+  ) {
+    throw new AppError(
+      "Credential has expired.",
+      403,
+      "Ask an admin to rotate the credential and update its expiration date.",
+    );
+  }
+
   const credential = decryptSecret(credentialEncrypted);
+  const totpSecretEncrypted =
+    tool.credentialMode === "shared"
+      ? tool.totpSecretEncrypted
+      : grant.totpSecretEncrypted;
+  const otp = totpSecretEncrypted
+    ? generateTotpSnapshot(decryptSecret(totpSecretEncrypted))
+    : undefined;
 
   await appendAuditLog({
     organizationId,
@@ -208,7 +230,13 @@ export async function getCredentialForAgent(
     action: "credential.vended",
     targetType: "tool",
     targetId: toolId,
-    metadata: { agentId, toolId, toolName: tool.name },
+    metadata: {
+      agentId,
+      toolId,
+      toolName: tool.name,
+      ip: requestMetadata?.ip?.slice(0, 45) ?? null,
+      userAgent: requestMetadata?.userAgent?.slice(0, 256) ?? null,
+    },
   });
 
   return {
@@ -216,7 +244,101 @@ export async function getCredentialForAgent(
     toolName: tool.name,
     authType: tool.authType,
     credential,
+    otp,
     instructions: tool.instructions ?? "",
+  };
+}
+
+export async function getOtpForAgent(
+  organizationId: string,
+  agentId: string,
+  toolId: string,
+  agentName: string,
+  requestMetadata?: { ip: string | null; userAgent: string | null },
+) {
+  const db = getDb();
+  const tool = await db.query.tools.findFirst({
+    where: and(eq(tools.id, toolId), eq(tools.organizationId, organizationId)),
+  });
+
+  if (!tool) {
+    throw new AppError(
+      "Tool not found.",
+      404,
+      "Check the tool ID. Use GET /api/tools to browse available tools and their IDs.",
+    );
+  }
+
+  const grant = await db.query.accessGrants.findFirst({
+    where: and(
+      eq(accessGrants.organizationId, organizationId),
+      eq(accessGrants.agentId, agentId),
+      eq(accessGrants.toolId, toolId),
+    ),
+  });
+
+  if (!grant || grant.status !== "approved") {
+    let hint = "Request access first via POST /api/tools/{tool_id}/request with a reason.";
+    if (grant) {
+      if (grant.status === "pending") {
+        hint = "Your request is pending human review. Check status via GET /api/tools.";
+      } else if (grant.status === "denied") {
+        hint = "Your request was denied. Check GET /api/tools for the denial_reason. You can submit a new request with a different justification.";
+      } else if (grant.status === "revoked") {
+        hint = "Your access was revoked. Submit a new request via POST /api/tools/{tool_id}/request.";
+      }
+    }
+    throw new AppError("This tool has not been approved for the agent.", 403, hint);
+  }
+
+  if (
+    tool.credentialMode === "shared" &&
+    tool.credentialExpiresAt &&
+    tool.credentialExpiresAt.getTime() <= Date.now()
+  ) {
+    throw new AppError(
+      "Credential has expired.",
+      403,
+      "Ask an admin to rotate the credential and update its expiration date.",
+    );
+  }
+
+  const totpSecretEncrypted =
+    tool.credentialMode === "shared"
+      ? tool.totpSecretEncrypted
+      : grant.totpSecretEncrypted;
+
+  if (!totpSecretEncrypted) {
+    throw new AppError(
+      "TOTP is not configured for this tool.",
+      404,
+      "Ask an admin to configure a TOTP secret for this tool in the AgentKey dashboard.",
+    );
+  }
+
+  const otp = generateTotpSnapshot(decryptSecret(totpSecretEncrypted));
+
+  await appendAuditLog({
+    organizationId,
+    actorType: "agent",
+    actorId: agentId,
+    actorLabel: agentName,
+    action: "otp.vended",
+    targetType: "tool",
+    targetId: toolId,
+    metadata: {
+      agentId,
+      toolId,
+      toolName: tool.name,
+      ip: requestMetadata?.ip?.slice(0, 45) ?? null,
+      userAgent: requestMetadata?.userAgent?.slice(0, 256) ?? null,
+    },
+  });
+
+  return {
+    toolId: tool.id,
+    toolName: tool.name,
+    otp,
   };
 }
 

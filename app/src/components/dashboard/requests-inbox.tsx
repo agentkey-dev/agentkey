@@ -6,6 +6,7 @@ import { useState, useTransition } from "react";
 import { unwrapResponseData } from "@/components/dashboard/api";
 import { TimeAgo } from "@/components/dashboard/time-ago";
 import type { PendingAdminRequestItem } from "@/lib/services/admin";
+import { serializeLoginCredential } from "@/lib/totp";
 
 function getErrorMessage(payload: unknown) {
   if (
@@ -169,6 +170,9 @@ function AccessRequestRow({
   onRevert: () => void;
 }) {
   const [credential, setCredential] = useState("");
+  const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [totpSecret, setTotpSecret] = useState("");
   const [reason, setReason] = useState("");
   const [mode, setMode] = useState<"idle" | "approving-cred" | "denying">(
     "idle",
@@ -176,8 +180,13 @@ function AccessRequestRow({
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const needsCredential = request.toolCredentialMode === "per_agent";
+  const isLoginTool = request.toolAuthType === "login";
+  const isOAuthTool = request.toolAuthType === "oauth_token";
+  const canConfirmPerAgentApprove = isLoginTool
+    ? loginUsername.trim().length > 0 && loginPassword.length > 0
+    : credential.trim().length > 0;
 
-  function approve(credentialValue: string) {
+  function approve(credentialValue: string, totpValue?: string) {
     setError(null);
     onHide();
     startTransition(async () => {
@@ -187,7 +196,10 @@ function AccessRequestRow({
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ credential: credentialValue.trim() }),
+            body: JSON.stringify({
+              credential: credentialValue.trim(),
+              totpSecret: totpValue?.trim() ? totpValue.trim() : undefined,
+            }),
           },
         );
         const data = await response.json();
@@ -268,20 +280,70 @@ function AccessRequestRow({
               Per-agent tool — paste a credential just for{" "}
               <span className="text-on-surface">{request.agentName}</span>.
             </p>
+            {isLoginTool ? (
+              <div className="grid gap-2 md:grid-cols-2">
+                <input
+                  type="text"
+                  autoFocus
+                  autoComplete="off"
+                  value={loginUsername}
+                  onChange={(event) => setLoginUsername(event.target.value)}
+                  placeholder="Username / email"
+                  className="w-full border border-white/10 bg-surface px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
+                />
+                <input
+                  type="password"
+                  autoComplete="off"
+                  value={loginPassword}
+                  onChange={(event) => setLoginPassword(event.target.value)}
+                  placeholder="Password"
+                  className="w-full border border-white/10 bg-surface px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
+                />
+              </div>
+            ) : isOAuthTool ? (
+              <textarea
+                rows={2}
+                autoFocus
+                autoComplete="off"
+                value={credential}
+                onChange={(event) => setCredential(event.target.value)}
+                placeholder='{"client_id": "...", "refresh_token": "..."}'
+                className="w-full border border-white/10 bg-surface px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
+              />
+            ) : (
+              <input
+                type="password"
+                autoFocus
+                autoComplete="off"
+                value={credential}
+                onChange={(event) => setCredential(event.target.value)}
+                placeholder={`Paste ${request.toolName} credential for ${request.agentName}`}
+                className="w-full border border-white/10 bg-surface px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
+              />
+            )}
             <input
               type="password"
-              autoFocus
               autoComplete="off"
-              value={credential}
-              onChange={(event) => setCredential(event.target.value)}
-              placeholder={`Paste ${request.toolName} credential for ${request.agentName}`}
+              value={totpSecret}
+              onChange={(event) => setTotpSecret(event.target.value)}
+              placeholder="2FA / TOTP secret (optional — Base32 or otpauth://)"
               className="w-full border border-white/10 bg-surface px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
             />
             <div className="flex gap-2">
               <button
                 type="button"
-                disabled={isPending || credential.trim().length === 0}
-                onClick={() => approve(credential)}
+                disabled={isPending || !canConfirmPerAgentApprove}
+                onClick={() =>
+                  approve(
+                    isLoginTool
+                      ? serializeLoginCredential({
+                          username: loginUsername.trim(),
+                          password: loginPassword,
+                        })
+                      : credential,
+                    totpSecret,
+                  )
+                }
                 className="inline-flex items-center justify-center bg-primary px-3 py-1.5 text-xs font-semibold text-on-primary transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Approve
@@ -292,6 +354,9 @@ function AccessRequestRow({
                 onClick={() => {
                   setMode("idle");
                   setCredential("");
+                  setLoginUsername("");
+                  setLoginPassword("");
+                  setTotpSecret("");
                 }}
                 className="inline-flex items-center justify-center px-3 py-1.5 text-xs text-on-surface-variant hover:text-on-surface"
               >

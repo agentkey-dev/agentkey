@@ -251,7 +251,10 @@ export async function getFirstOrganizationForUser(userId: string) {
       organizations,
       eq(organizationMemberships.organizationId, organizations.id),
     )
-    .where(eq(organizationMemberships.userId, userId))
+    .where(and(
+      eq(organizationMemberships.userId, userId),
+      eq(organizationMemberships.role, "admin"),
+    ))
     .limit(1);
 
   return rows[0]?.organization ?? null;
@@ -267,6 +270,7 @@ export async function selectOrganizationForSession(input: {
     where: and(
       eq(organizationMemberships.userId, input.userId),
       eq(organizationMemberships.organizationId, input.organizationId),
+      eq(organizationMemberships.role, "admin"),
     ),
   });
 
@@ -280,7 +284,12 @@ export async function selectOrganizationForSession(input: {
       selectedOrganizationId: input.organizationId,
       updatedAt: new Date(),
     })
-    .where(eq(authSessions.id, input.sessionId));
+    .where(and(
+      eq(authSessions.id, input.sessionId),
+      eq(authSessions.userId, input.userId),
+      isNull(authSessions.revokedAt),
+      gt(authSessions.expiresAt, new Date()),
+    ));
 }
 
 export async function sendMagicLinkEmail(input: {

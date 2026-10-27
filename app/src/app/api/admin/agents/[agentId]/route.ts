@@ -1,12 +1,14 @@
 import { getAdminContext } from "@/lib/auth/admin";
 import {
   ADMIN_JSON_BODY_LIMIT,
+  assertSameOriginMutation,
   handleRouteError,
   jsonData,
   jsonError,
   readJsonBody,
 } from "@/lib/http";
-import { updateAgentSchema } from "@/lib/validation";
+import { enforceRateLimit } from "@/lib/ratelimit";
+import { assertValidUuid, updateAgentSchema } from "@/lib/validation";
 import { suspendAgent, updateAgent } from "@/lib/services/admin";
 
 export async function PUT(
@@ -24,7 +26,10 @@ export async function PUT(
       return jsonError("Select or create an organization first.", 409);
     }
 
+    await enforceRateLimit(adminContext.userId, "admin");
+
     const { agentId } = await context.params;
+    assertValidUuid(agentId, "Agent ID");
     const parsed = await readJsonBody(
       request,
       updateAgentSchema,
@@ -47,10 +52,11 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ agentId: string }> },
 ) {
   try {
+    assertSameOriginMutation(request);
     const adminContext = await getAdminContext();
 
     if (adminContext.kind === "signed-out") {
@@ -61,7 +67,10 @@ export async function DELETE(
       return jsonError("Select or create an organization first.", 409);
     }
 
+    await enforceRateLimit(adminContext.userId, "admin");
+
     const { agentId } = await context.params;
+    assertValidUuid(agentId, "Agent ID");
     await suspendAgent(
       adminContext.organization.id,
       agentId,

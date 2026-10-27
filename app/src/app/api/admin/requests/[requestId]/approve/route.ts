@@ -1,4 +1,5 @@
 import { getAdminContext } from "@/lib/auth/admin";
+import { toAccessGrantResponse } from "@/lib/core/grants";
 import { approveRequest } from "@/lib/services/admin";
 import {
   ADMIN_JSON_BODY_LIMIT,
@@ -8,7 +9,7 @@ import {
   readJsonBody,
 } from "@/lib/http";
 import { enforceRateLimit } from "@/lib/ratelimit";
-import { approveRequestSchema } from "@/lib/validation";
+import { approveRequestSchema, assertValidUuid } from "@/lib/validation";
 
 export async function POST(
   request: Request,
@@ -28,6 +29,7 @@ export async function POST(
     await enforceRateLimit(adminContext.userId, "admin");
 
     const { requestId } = await context.params;
+    assertValidUuid(requestId, "Request ID");
     const parsed = await readJsonBody(
       request,
       approveRequestSchema,
@@ -41,9 +43,12 @@ export async function POST(
         actorId: adminContext.userId,
         actorEmail: adminContext.userEmail,
       },
+      {
+        totpSecret: parsed.totpSecret,
+      },
     );
 
-    return jsonData(updated);
+    return jsonData(toAccessGrantResponse(updated));
   } catch (error) {
     return handleRouteError(error);
   }
