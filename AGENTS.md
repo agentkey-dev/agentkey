@@ -21,6 +21,7 @@ The `/credentials` endpoint returns:
 
 ### Important
 - Never put live credentials, TOTP seeds, or vault responses in source, fixtures, snapshots, logs, or commit messages. Use public RFC vectors or explicitly synthetic data. Run `gitleaks dir --redact --no-banner .` before publishing; test files are included in the scan.
+- Install Gitleaks and enable the tracked pre-commit check with `git config core.hooksPath .githooks` in each clone. CI also scans the source tree, but only the local hook can catch a mistake before a public push.
 - You start with access to **nothing**. Always check `GET /api/tools` first.
 - Never hardcode credentials. Always fetch them from AgentKey when you need them.
 - If a credential stops working, re-fetch it — an admin may have rotated it.
