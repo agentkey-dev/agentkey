@@ -1,4 +1,5 @@
 import { getAdminContext } from "@/lib/auth/admin";
+import { toAccessGrantResponse } from "@/lib/core/grants";
 import {
   ADMIN_JSON_BODY_LIMIT,
   handleRouteError,
@@ -47,7 +48,7 @@ export async function POST(
       },
     );
 
-    return jsonData(grant, 201);
+    return jsonData(toAccessGrantResponse(grant), 201);
   } catch (error) {
     return handleRouteError(error);
   }

@@ -29,6 +29,11 @@ these production secrets should remain: `ENCRYPTION_KEY`,
 `NEXT_PUBLIC_BRANDFETCH_CLIENT_ID`, `NEXT_PUBLIC_TURNSTILE_SITE_KEY`,
 `TURNSTILE_SECRET_KEY`.
 
+Do not replace `ENCRYPTION_KEY` alone: existing tool and webhook ciphertext
+would become unreadable. Rotate that key only with a verified backup and a
+coordinated migration that re-encrypts every stored secret and verifies it before
+retiring the old key. Rotate individual tool credentials through the application.
+
 ## Email Sending Check
 
 Confirm `AUTH_EMAIL_FROM` is `AgentKey <login@agentkey.dev>` in
@@ -50,17 +55,61 @@ full admin and can approve grants, rotate agent keys, create/delete tools, and
 manage credentials. Add RBAC before inviting users who should have read-only or
 limited access.
 
-Magic-link callbacks are GET requests that consume a one-time token. Some mail
-link scanners can prefetch those links and consume the token before the user
-clicks it. A prefetch-safe two-step confirmation flow is a deferred UX change.
+Magic-link callback GET requests only display a confirmation page. A same-origin
+POST consumes the one-time token and creates the session. Authentication forms
+are limited to 8 KB. Administrative mutations must supply the configured
+application Origin or valid same-origin Fetch Metadata; CLI diagnostics should
+send `Origin: https://agentkey.dev` when exercising those browser endpoints.
+
+The confirmation page uses `strict-origin` in both its Referrer-Policy header
+and HTML meta tag. This keeps the token out of Referer headers while preserving
+the Origin on native form submissions. Do not use `no-referrer` on that page:
+browsers then submit `Origin: null`, which the sign-in origin check rejects.
+
+Worker invocation logs redact query strings because callback URLs contain login
+tokens. Keep `observability.redact_query_string` enabled. Credential vending logs
+include the requesting client IP and bounded user agent, never credentials.
+
+The production application has no organization-invitation sending or acceptance
+flow. A third-party invitation using the AgentKey name is not evidence that an
+application membership was created; inspect its destination and the production
+membership records.
+
+## Machine API Browser Integrity Check
+
+Cloudflare Browser Integrity Check can reject normal Python `urllib` requests
+with HTTP 403 and plain text `error code: 1010` before the Worker runs. This is
+different from an application JSON 401/403, which indicates an authentication,
+grant, or browser-origin failure.
+
+Keep zone-wide Browser Integrity Check enabled and retain the zone custom WAF
+rule with ref `agentkey_machine_api_skip_bic`. It skips only the `bic` product
+for this expression:
+
+```text
+http.host eq "agentkey.dev" and http.request.method in {"GET" "POST" "OPTIONS"} and (http.request.uri.path in {"/api/me" "/api/tools"} or starts_with(http.request.uri.path, "/api/tools/"))
+```
+
+The rule uses `action: "skip"`, `action_parameters: { "products": ["bic"] }`,
+and `logging: { "enabled": true }`. Do not add a phase or ruleset skip: managed
+WAF, rate limits, and other custom rules must continue to run. Agent bearer-key,
+organization, grant, and credential-origin checks remain enforced by the Worker.
+The rule excludes browser authentication and admin routes. It is a zone setting,
+so deploying or rolling back a Worker does not change it.
+
+Run `npm run smoke:production --workspace app` after security-rule changes. It
+checks Python, requests, curl, undici, and omitted User-Agent headers. Supplying
+`AGENTKEY_API_KEY` in the environment also verifies authenticated catalog access
+for those clients without printing credentials.
 
 ## D1 Mutation Semantics
 
 Drizzle's D1 transaction path emits `BEGIN`, which the deployed Worker runtime
 rejects. Production service mutations therefore run directly against the D1
 executor today. Multi-write admin flows are not fully atomic until they are
-rewritten around raw D1 `batch()`/SQL. Keep validation and audit preparation
-before security-sensitive status writes when touching these paths.
+rewritten around raw D1 `batch()`/SQL. Write authorization audit records before
+enabling grants, and use conditional updates to avoid overwriting concurrent
+decisions. A failed grant write can leave an audit record without enabling access.
 
 ## Rollback By Worker Version
 

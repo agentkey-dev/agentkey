@@ -107,7 +107,7 @@ export const TOOLS_CREDENTIALS_SCHEMA = {
   method: "GET",
   path: "/api/tools/{tool_id}/credentials",
   description:
-    "Fetch credentials for an approved tool. Returns the credential and a usage guide with company-specific context.",
+    "Fetch credentials for an approved tool. Returns the credential, an optional live 2FA/TOTP code snapshot if configured, and a usage guide with company-specific context.",
   authentication: "Authorization: Bearer <AGENTKEY_API_KEY>",
   responses: {
     "200": {
@@ -117,6 +117,13 @@ export const TOOLS_CREDENTIALS_SCHEMA = {
         tool_name: "Linear",
         auth_type: "api_key",
         credential: "lin_api_xxx",
+        otp: {
+          code: "482910",
+          expires_in_seconds: 18,
+          period_seconds: 30,
+          next_code: "910284",
+        },
+        otp_endpoint: "/api/tools/{tool_id}/otp",
         instructions:
           "Use as Bearer token. Base URL: https://api.linear.app. Team: ACME (ID: abc123).",
         suggest_instructions_endpoint:
@@ -126,6 +133,35 @@ export const TOOLS_CREDENTIALS_SCHEMA = {
     "403": {
       description:
         "Not approved. Check GET /api/tools for your access status and denial_reason.",
+    },
+  },
+};
+
+export const TOOLS_OTP_SCHEMA = {
+  method: "GET",
+  path: "/api/tools/{tool_id}/otp",
+  description:
+    "Fetch a fresh live 2FA / TOTP code for an approved tool without re-fetching the primary credential. AgentKey computes the code in memory and never exposes the raw TOTP seed.",
+  authentication: "Authorization: Bearer <AGENTKEY_API_KEY>",
+  responses: {
+    "200": {
+      description: "Live OTP code generated",
+      example: {
+        tool_id: "uuid",
+        tool_name: "Microsoft",
+        otp: {
+          code: "482910",
+          expires_in_seconds: 18,
+          period_seconds: 30,
+          next_code: "910284",
+        },
+      },
+    },
+    "403": {
+      description: "Not approved for this tool.",
+    },
+    "404": {
+      description: "Tool not found or no 2FA / TOTP secret is configured for it.",
     },
   },
 };

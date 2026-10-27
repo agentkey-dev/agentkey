@@ -8,6 +8,25 @@ import {
 } from "@/lib/agent-onboarding";
 import { getAppOrigin } from "@/lib/origin";
 
+function withEnvironment(values: Record<string, string | undefined>, callback: () => void) {
+  const previous = Object.fromEntries(Object.keys(values).map((key) => [key, process.env[key]]));
+  const apply = (entries: Record<string, string | undefined>) => {
+    for (const [key, value] of Object.entries(entries)) {
+      if (value === undefined) {
+        Reflect.deleteProperty(process.env, key);
+      } else {
+        Reflect.set(process.env, key, value);
+      }
+    }
+  };
+  apply(values);
+  try {
+    callback();
+  } finally {
+    apply(previous);
+  }
+}
+
 test("agent onboarding env block only includes the API key", () => {
   assert.equal(
     getAgentEnvBlock("sk_agent_123"),
@@ -37,46 +56,19 @@ test("claude snippet uses the normalized endpoint", () => {
 });
 
 test("getAppOrigin uses APP_URL when configured", () => {
-  const previousAppUrl = process.env.APP_URL;
-  const previousNodeEnv = process.env.NODE_ENV;
-
-  process.env.APP_URL = "https://agentkey.example.com/";
-  process.env.NODE_ENV = "production";
-
-  try {
+  withEnvironment({ APP_URL: "https://agentkey.example.com/", NODE_ENV: "production" }, () => {
     assert.equal(getAppOrigin(), "https://agentkey.example.com");
-  } finally {
-    process.env.APP_URL = previousAppUrl;
-    process.env.NODE_ENV = previousNodeEnv;
-  }
+  });
 });
 
 test("getAppOrigin rejects missing APP_URL in production", () => {
-  const previousAppUrl = process.env.APP_URL;
-  const previousNodeEnv = process.env.NODE_ENV;
-
-  delete process.env.APP_URL;
-  process.env.NODE_ENV = "production";
-
-  try {
+  withEnvironment({ APP_URL: undefined, NODE_ENV: "production" }, () => {
     assert.throws(() => getAppOrigin(), /APP_URL environment variable is required/);
-  } finally {
-    process.env.APP_URL = previousAppUrl;
-    process.env.NODE_ENV = previousNodeEnv;
-  }
+  });
 });
 
 test("getAppOrigin falls back to localhost in development", () => {
-  const previousAppUrl = process.env.APP_URL;
-  const previousNodeEnv = process.env.NODE_ENV;
-
-  delete process.env.APP_URL;
-  process.env.NODE_ENV = "development";
-
-  try {
+  withEnvironment({ APP_URL: undefined, NODE_ENV: "development" }, () => {
     assert.equal(getAppOrigin(), "http://localhost:3000");
-  } finally {
-    process.env.APP_URL = previousAppUrl;
-    process.env.NODE_ENV = previousNodeEnv;
-  }
+  });
 });

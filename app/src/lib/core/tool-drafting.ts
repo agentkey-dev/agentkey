@@ -75,7 +75,7 @@ export function wrapUntrustedToolName(name: string) {
 export function wrapUntrustedGuideMarkdown(markdown: string) {
   return `<untrusted_guide_markdown>\n${escapeUntrustedBlock(markdown)}\n</untrusted_guide_markdown>`;
 }
-const TOOL_AUTH_TYPES = ["api_key", "oauth_token", "bot_token", "other"] as const;
+const TOOL_AUTH_TYPES = ["api_key", "oauth_token", "bot_token", "login", "other"] as const;
 
 export const toolAuthTypeSchema = z.enum(TOOL_AUTH_TYPES);
 

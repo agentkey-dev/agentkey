@@ -98,8 +98,8 @@ test("rate limiting updates buckets with one atomic D1 upsert", async () => {
                 bucket.windowMs !== windowMs;
               bucket = {
                 key,
-                count: shouldReset ? 1 : bucket.count + 1,
-                windowStart: shouldReset ? now : bucket.windowStart,
+                count: shouldReset ? 1 : (bucket?.count ?? 0) + 1,
+                windowStart: shouldReset ? now : (bucket?.windowStart ?? now),
                 windowMs,
                 updatedAt,
               };

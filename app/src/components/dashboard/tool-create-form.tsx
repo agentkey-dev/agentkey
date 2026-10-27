@@ -19,6 +19,10 @@ import {
   withCredentialMode,
   type ToolSetupFormState,
 } from "@/lib/tool-setup";
+import {
+  detectPlaintextSecretInInstructions,
+  serializeLoginCredential,
+} from "@/lib/totp";
 
 type SetupGuideMetadata = {
   authType: ToolAuthType;
@@ -274,6 +278,7 @@ export function ToolCreateForm({
   );
   const [docsUrl, setDocsUrl] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showTotpInput, setShowTotpInput] = useState(false);
 
   // Brandfetch auto-resolution
   const [autoFilledForName, setAutoFilledForName] = useState<string | null>(
@@ -316,6 +321,7 @@ export function ToolCreateForm({
     setForm(getInitialToolSetupForm(suggestion));
     setDocsUrl("");
     setShowAdvanced(false);
+    setShowTotpInput(false);
     setAutoFilledForName(null);
     setGuideMarkdown("");
     setGuideMetadata(null);
@@ -517,6 +523,8 @@ export function ToolCreateForm({
     }
   }
 
+  const secretWarning = detectPlaintextSecretInInstructions(form.instructions);
+
   return (
     <div className="space-y-5 border border-white/10 bg-surface-container p-6">
       <div>
@@ -535,6 +543,18 @@ export function ToolCreateForm({
           event.preventDefault();
           setError(null);
 
+          const resolvedCredential =
+            form.credentialMode === "shared"
+              ? form.authType === "login"
+                ? form.loginUsername.trim() && form.loginPassword
+                  ? serializeLoginCredential({
+                      username: form.loginUsername.trim(),
+                      password: form.loginPassword,
+                    })
+                  : form.credential
+                : form.credential
+              : undefined;
+
           startSubmitTransition(async () => {
             const response = await fetch("/api/admin/tools", {
               method: "POST",
@@ -545,8 +565,11 @@ export function ToolCreateForm({
                 url: form.url,
                 authType: form.authType,
                 credentialMode: form.credentialMode,
-                credential:
-                  form.credentialMode === "shared" ? form.credential : undefined,
+                credential: resolvedCredential,
+                totpSecret:
+                  form.credentialMode === "shared" && form.totpSecret.trim()
+                    ? form.totpSecret.trim()
+                    : undefined,
                 instructions: form.instructions,
                 sourceSuggestionId: suggestion?.id,
               }),
@@ -618,50 +641,168 @@ export function ToolCreateForm({
         </label>
 
         {form.credentialMode === "shared" ? (
-          <div className="space-y-2">
-            <label className="grid gap-2 text-sm text-on-surface-variant">
-              <span className="flex items-center gap-2">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="flex items-center gap-2 text-sm text-on-surface-variant">
                 Credential
                 <span className="font-mono text-[10px] uppercase tracking-widest text-on-surface-variant/60">
                   encrypted at rest
                 </span>
               </span>
-              {form.authType === "oauth_token" ? (
-                <textarea
-                  required
-                  rows={4}
-                  autoComplete="off"
-                  value={form.credential}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      credential: event.target.value,
-                    }))
-                  }
-                  className="border border-white/10 bg-surface px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
-                  placeholder='{"client_id": "...", "client_secret": "...", "refresh_token": "..."}'
-                />
-              ) : (
+              <div className="flex flex-wrap items-center gap-1">
+                {(
+                  [
+                    ["api_key", "API key"],
+                    ["login", "Login + 2FA"],
+                    ["oauth_token", "OAuth"],
+                    ["bot_token", "Bot token"],
+                    ["other", "Other"],
+                  ] as const
+                ).map(([type, label]) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() =>
+                      setForm((current) => ({ ...current, authType: type }))
+                    }
+                    className={`border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider transition-colors ${
+                      form.authType === type
+                        ? "border-primary/50 bg-primary/15 text-primary"
+                        : "border-white/10 bg-white/5 text-on-surface-variant hover:border-white/20"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {form.authType === "login" ? (
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="grid gap-1.5 text-xs text-on-surface-variant">
+                  Username / email
+                  <input
+                    required
+                    type="text"
+                    autoComplete="off"
+                    value={form.loginUsername}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        loginUsername: event.target.value,
+                      }))
+                    }
+                    className="border border-white/10 bg-surface px-3 py-2 font-mono text-sm text-on-surface outline-none focus:border-primary"
+                    placeholder="agent@company.com"
+                  />
+                </label>
+                <label className="grid gap-1.5 text-xs text-on-surface-variant">
+                  Password
+                  <input
+                    required
+                    type="password"
+                    autoComplete="off"
+                    value={form.loginPassword}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        loginPassword: event.target.value,
+                      }))
+                    }
+                    className="border border-white/10 bg-surface px-3 py-2 font-mono text-sm text-on-surface outline-none focus:border-primary"
+                    placeholder="Account password"
+                  />
+                </label>
+              </div>
+            ) : form.authType === "oauth_token" ? (
+              <textarea
+                required
+                rows={4}
+                autoComplete="off"
+                value={form.credential}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    credential: event.target.value,
+                  }))
+                }
+                className="w-full border border-white/10 bg-surface px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
+                placeholder='{"client_id": "...", "client_secret": "...", "refresh_token": "..."}'
+              />
+            ) : (
+              <input
+                required
+                type="password"
+                autoComplete="off"
+                value={form.credential}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    credential: event.target.value,
+                  }))
+                }
+                className="w-full border border-white/10 bg-surface px-3 py-2 font-mono text-sm text-on-surface outline-none focus:border-primary"
+                placeholder="Paste the API key or token"
+              />
+            )}
+
+            {form.authType === "login" ||
+            showTotpInput ||
+            form.totpSecret.trim().length > 0 ? (
+              <div className="space-y-1.5 border border-white/10 bg-surface-container-lowest p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2 text-xs text-on-surface-variant">
+                    2FA / TOTP secret
+                    <span className="font-mono text-[10px] uppercase tracking-widest text-emerald-400/80">
+                      optional · zero seed exposure
+                    </span>
+                  </span>
+                  {form.authType !== "login" && !form.totpSecret.trim() ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowTotpInput(false)}
+                      className="text-[11px] text-on-surface-variant/70 hover:text-on-surface"
+                    >
+                      Hide
+                    </button>
+                  ) : null}
+                </div>
                 <input
-                  required
                   type="password"
                   autoComplete="off"
-                  value={form.credential}
+                  value={form.totpSecret}
                   onChange={(event) =>
                     setForm((current) => ({
                       ...current,
-                      credential: event.target.value,
+                      totpSecret: event.target.value,
                     }))
                   }
-                  className="border border-white/10 bg-surface px-3 py-2 font-mono text-sm text-on-surface outline-none focus:border-primary"
-                  placeholder="Paste the API key or token"
+                  className="w-full border border-white/10 bg-surface px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
+                  placeholder="Base32 seed (e.g. JBSWY3DPEHPK3PXP) or otpauth://totp/..."
                 />
-              )}
-              <span className="text-xs text-on-surface-variant/70">
-                AES-256 encrypted. Vended only to approved agents. Rotate any
-                time from the tool detail.
-              </span>
-            </label>
+                <p className="text-[11px] text-on-surface-variant/70">
+                  Encrypted at rest. Agents receive live 6-digit codes via{" "}
+                  <code className="font-mono text-primary">otp.code</code> and{" "}
+                  <code className="font-mono text-primary">
+                    GET /api/tools/&#123;id&#125;/otp
+                  </code>{" "}
+                  — never the raw TOTP seed.
+                </p>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowTotpInput(true)}
+                className="inline-flex items-center gap-1.5 text-xs text-on-surface-variant transition-colors hover:text-primary"
+              >
+                + Add 2FA / TOTP secret (optional)
+              </button>
+            )}
+
+            <p className="text-xs text-on-surface-variant/70">
+              AES-256 encrypted. Vended only to approved agents. Rotate any
+              time from the tool detail.
+            </p>
             {aiDraftingEnabled ? (
               <button
                 type="button"
@@ -781,6 +922,30 @@ Rules:
             auth format, base URLs, IDs, conventions, and rules. Optional but
             recommended.
           </p>
+          {secretWarning ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100">
+              <span>{secretWarning.warning}</span>
+              {secretWarning.extractedTotpSecret &&
+              form.credentialMode === "shared" ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowTotpInput(true);
+                    setForm((current) => ({
+                      ...current,
+                      totpSecret: secretWarning.extractedTotpSecret!,
+                      instructions:
+                        secretWarning.cleanedInstructions ??
+                        current.instructions,
+                    }));
+                  }}
+                  className="shrink-0 border border-amber-400/40 bg-amber-400/15 px-2.5 py-1 font-medium text-amber-100 transition-colors hover:bg-amber-400/25"
+                >
+                  Move to encrypted 2FA field
+                </button>
+              ) : null}
+            </div>
+          ) : null}
           {draftError ? (
             <p className="text-xs text-rose-300">{draftError}</p>
           ) : null}
@@ -822,6 +987,7 @@ Rules:
                   className="border border-white/10 bg-surface px-3 py-2 text-on-surface outline-none focus:border-primary"
                 >
                   <option value="api_key">API key</option>
+                  <option value="login">Login (username + password)</option>
                   <option value="oauth_token">OAuth token</option>
                   <option value="bot_token">Bot token</option>
                   <option value="other">Other</option>

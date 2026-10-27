@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 
 import { getOptionalAgentCorsOrigins, getTrustedProxyCount } from "@/lib/env";
+import { getAppOrigin } from "@/lib/origin";
 
 export function assertAllowedAgentOrigin(request: Request) {
   const requestOrigin = request.headers.get("origin");
@@ -19,31 +20,11 @@ export function assertAllowedAgentOrigin(request: Request) {
   }
 }
 
-// Defense-in-depth against CSRF on admin mutation routes that don't read a JSON
-// body (and therefore can't rely on the Content-Type: application/json check in
-// readJsonBody). Browsers always set Origin on cross-origin POSTs; server-to-
-// server callers typically omit it. Reject when Origin is present and does not
-// match the request's own host.
+// Cookie-authenticated mutations must come from the configured application
+// origin. request.url can contain a forwarded host supplied by the caller, and
+// comparing only hosts also incorrectly treats HTTP and HTTPS as one origin.
 export function assertSameOriginMutation(request: Request) {
-  const originHeader = request.headers.get("origin");
-  if (!originHeader) {
-    return;
-  }
-
-  let originHost: string;
-  let targetHost: string;
-  try {
-    originHost = new URL(originHeader).host;
-    targetHost = new URL(request.url).host;
-  } catch {
-    throw new AppError(
-      "Invalid Origin header.",
-      403,
-      "Origin header must be a valid URL.",
-    );
-  }
-
-  if (originHost !== targetHost) {
+  if (!isSameOriginRequest(request, getAppOrigin())) {
     throw new AppError(
       "Cross-origin requests are not allowed on this endpoint.",
       403,
@@ -73,7 +54,10 @@ export function jsonError(
   if (hint) {
     body.hint = hint;
   }
-  return NextResponse.json(body, { status, headers });
+  return NextResponse.json(body, {
+    status,
+    headers: { "Cache-Control": "no-store, private", ...headers },
+  });
 }
 
 export function jsonSuccess(
@@ -81,7 +65,10 @@ export function jsonSuccess(
   status = 200,
   headers?: Record<string, string>,
 ) {
-  return NextResponse.json(data, { status, headers });
+  return NextResponse.json(data, {
+    status,
+    headers: { "Cache-Control": "no-store, private", ...headers },
+  });
 }
 
 export function jsonData(
@@ -275,14 +262,19 @@ export function getClientIp(request: Request) {
  */
 export function isSameOriginRequest(request: Request, appOrigin: string) {
   const secFetchSite = request.headers.get("sec-fetch-site");
-
-  if (secFetchSite) {
-    return secFetchSite === "same-origin";
-  }
-
   const origin = request.headers.get("origin");
 
-  return origin !== null && origin === appOrigin;
+  if (secFetchSite && secFetchSite !== "same-origin") {
+    return false;
+  }
+
+  // Never let a positive Fetch Metadata value override a conflicting Origin.
+  // Both headers are browser-controlled, so any disagreement must fail closed.
+  if (origin !== null) {
+    return origin === appOrigin;
+  }
+
+  return secFetchSite === "same-origin";
 }
 
 export function getRequestMetadata(request: Request) {
@@ -385,7 +377,7 @@ export function handleRouteError(error: unknown) {
         details,
         hint: "Check the request body matches the expected format. Call GET on the same endpoint to see the schema.",
       },
-      { status: 400 },
+      { status: 400, headers: { "Cache-Control": "no-store, private" } },
     );
   }
 

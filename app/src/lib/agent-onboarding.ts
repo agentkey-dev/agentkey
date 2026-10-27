@@ -29,8 +29,9 @@ You have access to AgentKey, a central service that manages your credentials for
 
 ### Credential response
 The \`/credentials\` endpoint returns:
-- \`credential\` — the API key or token
-- \`auth_type\` — how to authenticate (api_key, oauth_token, bot_token)
+- \`credential\` — the API key/token string, or a structured \`{"username", "password"}\` object when \`auth_type\` is \`login\`
+- \`auth_type\` — how to authenticate (\`api_key\`, \`login\`, \`oauth_token\`, \`bot_token\`, \`other\`)
+- \`otp\` — *(when 2FA/TOTP is configured)* live computed \`{"code", "expires_in_seconds", "period_seconds", "next_code"}\`. If \`expires_in_seconds\` is low or you need a fresh code mid-login, call \`GET /api/tools/{tool_id}/otp\`.
 - \`instructions\` — **read this carefully**. It contains company-specific context: API base URLs, relevant IDs (channel IDs, repo URLs, project keys), conventions, and rules for how to use this tool in this organization.
 - \`suggest_instructions_endpoint\` — the endpoint to suggest improvements to the usage guide. If you discover facts not covered by the instructions (IDs, conventions, gotchas), use this endpoint to share them.
 
@@ -79,6 +80,10 @@ curl -s ${normalizedBaseUrl}/api/tools/suggest \\
 
 # Fetch credentials for an approved tool
 curl -s ${normalizedBaseUrl}/api/tools/{tool_id}/credentials \\
+  -H "Authorization: Bearer $${AGENT_API_KEY_ENV_VAR}"
+
+# Fetch a fresh 2FA / TOTP code on demand (when configured for the tool)
+curl -s ${normalizedBaseUrl}/api/tools/{tool_id}/otp \\
   -H "Authorization: Bearer $${AGENT_API_KEY_ENV_VAR}"
 
 # Suggest an improvement to a tool's usage guide after using it

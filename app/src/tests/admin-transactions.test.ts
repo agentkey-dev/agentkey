@@ -290,22 +290,13 @@ function createUpdateAgentTx(
   };
 }
 
-async function withMockTransaction<TState>(
+async function withMockTransaction<TState, TResult>(
   state: TState,
-  createTx: (
-    draft: TState,
-  ) => {
-    insert?: (table: unknown) => { values: (...args: unknown[]) => Promise<unknown> };
-    update?: (table: unknown) => unknown;
-    select?: () => unknown;
-    query?: Record<string, unknown>;
-  },
-  callback: () => Promise<unknown>,
+  createTx: (draft: TState) => object,
+  callback: () => Promise<TResult>,
 ) {
   const previousDb = globalThis.__toolProvisioningDb;
-  const previousSql = globalThis.__toolProvisioningSql;
 
-  globalThis.__toolProvisioningSql = {} as never;
   globalThis.__toolProvisioningDb = {
     transaction: async (transactionCallback: (tx: unknown) => Promise<unknown>) => {
       const draft = structuredClone(state);
@@ -324,25 +315,21 @@ async function withMockTransaction<TState>(
     return await callback();
   } finally {
     globalThis.__toolProvisioningDb = previousDb;
-    globalThis.__toolProvisioningSql = previousSql;
   }
 }
 
-async function withMockDb(
+async function withMockDb<TResult>(
   db: unknown,
-  callback: () => Promise<unknown>,
+  callback: () => Promise<TResult>,
 ) {
   const previousDb = globalThis.__toolProvisioningDb;
-  const previousSql = globalThis.__toolProvisioningSql;
 
-  globalThis.__toolProvisioningSql = {} as never;
   globalThis.__toolProvisioningDb = db as never;
 
   try {
     return await callback();
   } finally {
     globalThis.__toolProvisioningDb = previousDb;
-    globalThis.__toolProvisioningSql = previousSql;
   }
 }
 
@@ -400,8 +387,10 @@ test("createAgent returns a catalog item payload with empty access state", async
 
   assert.equal(typeof result.apiKey, "string");
   assert.equal(result.agentId, "agent-1");
+  const { apiKeyHash, ...publicAgent } = createdRow;
+  assert.equal(JSON.stringify(result.agent).includes(apiKeyHash), false);
   assert.deepEqual(result.agent, {
-    ...createdRow,
+    ...publicAgent,
     lastActiveAt: null,
     toolsGranted: [],
     toolsPending: [],

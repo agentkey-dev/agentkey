@@ -1,9 +1,29 @@
-import type { ToolCredentialMode } from "@/lib/db/schema";
+import type { accessGrants, ToolCredentialMode } from "@/lib/db/schema";
 import { AppError } from "@/lib/http";
 
 type GrantSnapshot = {
   status: "pending" | "approved" | "denied" | "revoked";
 };
+
+// Database grant rows contain encrypted credentials; return only fields the
+// dashboard uses and keep the stored secret out of browser/API responses.
+export function toAccessGrantResponse(grant: typeof accessGrants.$inferSelect) {
+  return {
+    id: grant.id,
+    organizationId: grant.organizationId,
+    agentId: grant.agentId,
+    toolId: grant.toolId,
+    status: grant.status,
+    reason: grant.reason,
+    denialReason: grant.denialReason,
+    decidedByUserId: grant.decidedByUserId,
+    decidedByEmail: grant.decidedByEmail,
+    requestedAt: grant.requestedAt,
+    decidedAt: grant.decidedAt,
+    createdAt: grant.createdAt,
+    updatedAt: grant.updatedAt,
+  };
+}
 
 export function assertGrantCanBeRequested(existing?: GrantSnapshot | null) {
   if (!existing) {

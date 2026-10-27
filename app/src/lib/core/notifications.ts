@@ -181,6 +181,10 @@ export function validateSlackWebhook(value: string) {
     throw new AppError("Slack webhook must use HTTPS.", 400);
   }
 
+  if (url.username || url.password || url.port || url.hash) {
+    throw new AppError("Slack webhook must use an unmodified incoming webhook URL.", 400);
+  }
+
   if (url.hostname !== "hooks.slack.com" && url.hostname !== "hooks.slack-gov.com") {
     throw new AppError("Slack webhook must use a Slack incoming webhook URL.", 400);
   }
@@ -201,6 +205,10 @@ export function validateDiscordWebhook(value: string) {
 
   if (url.protocol !== "https:") {
     throw new AppError("Discord webhook must use HTTPS.", 400);
+  }
+
+  if (url.username || url.password || url.port || url.hash) {
+    throw new AppError("Discord webhook must use an unmodified webhook URL.", 400);
   }
 
   if (
@@ -333,7 +341,9 @@ export async function sendNotificationWebhook(
 ) {
   const attemptedAt = new Date();
   const payload =
-    provider === "slack" ? { text: message } : { content: message };
+    provider === "slack"
+      ? { text: message }
+      : { content: message, allowed_mentions: { parse: [] } };
 
   try {
     // Re-validate hostname and allowlist at send time as defense against
@@ -357,11 +367,13 @@ export async function sendNotificationWebhook(
     });
 
     if (!response.ok) {
-      const body = await response.text();
+      // Remote error bodies may echo the token-bearing webhook URL and must
+      // not be persisted as plaintext in notification settings or audit logs.
+      await response.body?.cancel();
       return {
         provider,
         status: "failed",
-        error: `HTTP ${response.status}${body ? `: ${body.slice(0, 200)}` : ""}`,
+        error: `HTTP ${response.status}`,
         attemptedAt,
       } satisfies NotificationSendResult;
     }
@@ -376,7 +388,11 @@ export async function sendNotificationWebhook(
     return {
       provider,
       status: "failed",
-      error: error instanceof Error ? error.message : "Unknown delivery error.",
+      error: error instanceof AppError
+        ? error.message
+        : error instanceof Error && error.name === "TimeoutError"
+          ? "Webhook delivery timed out."
+          : "Webhook delivery failed.",
       attemptedAt,
     } satisfies NotificationSendResult;
   }

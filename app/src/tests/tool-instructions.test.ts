@@ -13,16 +13,13 @@ async function withMockDb(
   callback: () => Promise<unknown>,
 ) {
   const previousDb = globalThis.__toolProvisioningDb;
-  const previousSql = globalThis.__toolProvisioningSql;
 
-  globalThis.__toolProvisioningSql = {} as never;
   globalThis.__toolProvisioningDb = db as never;
 
   try {
     return await callback();
   } finally {
     globalThis.__toolProvisioningDb = previousDb;
-    globalThis.__toolProvisioningSql = previousSql;
   }
 }
 

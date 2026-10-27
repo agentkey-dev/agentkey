@@ -27,6 +27,7 @@ const ACTION_LABELS: Record<string, string> = {
   "grant.denied": "Access denied",
   "grant.revoked": "Access revoked",
   "credential.vended": "Credential fetched",
+  "otp.vended": "OTP code generated",
 };
 
 export function getActionLabel(action: string): string {

@@ -642,7 +642,16 @@ Rules:
                       /api/tools/&#123;id&#125;/credentials
                     </td>
                     <td className="px-4 py-3 text-on-surface-variant">
-                      Fetch credential + usage guide for an approved tool
+                      Fetch credential (+ live 2FA/TOTP snapshot if configured) + usage guide for an approved tool
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-3 font-mono text-primary">GET</td>
+                    <td className="px-4 py-3 font-mono text-on-surface">
+                      /api/tools/&#123;id&#125;/otp
+                    </td>
+                    <td className="px-4 py-3 text-on-surface-variant">
+                      Fetch a fresh live 2FA / TOTP code without exposing the raw seed
                     </td>
                   </tr>
                   <tr>

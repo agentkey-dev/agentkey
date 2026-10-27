@@ -1,4 +1,5 @@
 import { getAdminContext } from "@/lib/auth/admin";
+import { toAccessGrantResponse } from "@/lib/core/grants";
 import { denyRequest } from "@/lib/services/admin";
 import {
   ADMIN_JSON_BODY_LIMIT,
@@ -7,7 +8,8 @@ import {
   jsonError,
   readJsonBody,
 } from "@/lib/http";
-import { denyRequestSchema } from "@/lib/validation";
+import { enforceRateLimit } from "@/lib/ratelimit";
+import { assertValidUuid, denyRequestSchema } from "@/lib/validation";
 
 export async function POST(
   request: Request,
@@ -24,7 +26,10 @@ export async function POST(
       return jsonError("Select or create an organization first.", 409);
     }
 
+    await enforceRateLimit(adminContext.userId, "admin");
+
     const { requestId } = await context.params;
+    assertValidUuid(requestId, "Request ID");
     const parsed = await readJsonBody(
       request,
       denyRequestSchema,
@@ -40,7 +45,7 @@ export async function POST(
       },
     );
 
-    return jsonData(updated);
+    return jsonData(toAccessGrantResponse(updated));
   } catch (error) {
     return handleRouteError(error);
   }

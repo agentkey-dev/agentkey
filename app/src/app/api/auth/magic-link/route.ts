@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { isAuthFormRequest, readAuthFormData } from "@/lib/auth/form";
 
 import {
   createLoginToken,
@@ -11,18 +12,18 @@ import {
   enforceMagicLinkIpRateLimit,
 } from "@/lib/auth/magic-link";
 import { verifyTurnstileForAuth } from "@/lib/auth/turnstile";
-import { handleRouteError, readJsonBody } from "@/lib/http";
+import { assertSameOriginMutation, handleRouteError, readJsonBody } from "@/lib/http";
 import { getAppOrigin } from "@/lib/origin";
 
 const magicLinkSchema = z.object({
-  email: z.string().email(),
-  turnstileToken: z.string().optional(),
+  email: z.string().email().max(254),
+  turnstileToken: z.string().max(2048).optional(),
 });
 
 export async function POST(request: Request) {
   try {
-    const contentType = request.headers.get("content-type") ?? "";
-    const isForm = contentType.includes("application/x-www-form-urlencoded");
+    assertSameOriginMutation(request);
+    const isForm = isAuthFormRequest(request);
     let body: {
       email?: FormDataEntryValue | string;
       turnstileToken?: FormDataEntryValue | string;
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
     };
 
     if (isForm) {
-      const formData = await request.formData();
+      const formData = await readAuthFormData(request);
       body = {
         email: formData.get("email") ?? undefined,
         turnstileToken: formData.get("turnstileToken") ?? undefined,
@@ -85,6 +86,7 @@ export async function POST(request: Request) {
     if (isForm) {
       return NextResponse.redirect(
         new URL(`/sign-in?sent=1&email=${encodeURIComponent(email)}`, appOrigin),
+        { status: 303 },
       );
     }
 

@@ -65,6 +65,7 @@ import {
   listPendingToolSuggestions,
   resolveMatchingToolSuggestionsForTool,
 } from "@/lib/services/tool-suggestions";
+import { normalizeTotpSecretForStorage } from "@/lib/totp";
 
 type Actor = {
   actorId: string;
@@ -79,6 +80,7 @@ const ACCESS_HISTORY_ACTIONS = [
   "grant.denied",
   "grant.revoked",
   "credential.vended",
+  "otp.vended",
 ] as const;
 const STALE_ROTATION_DAYS = 90;
 const EXPIRY_WARNING_DAYS = 14;
@@ -130,6 +132,7 @@ export type PendingAccessRequestItem = {
   agentDescription: string;
   toolId: string;
   toolName: string;
+  toolAuthType?: typeof tools.$inferSelect.authType;
   toolCredentialMode: "shared" | "per_agent";
   reason: string | null;
   requestedAt: Date;
@@ -211,6 +214,7 @@ function toToolCatalogItem(
     url: tool.url,
     authType: tool.authType,
     credentialMode: tool.credentialMode,
+    totpConfigured: Boolean(tool.totpSecretEncrypted),
     instructions: tool.instructions,
     currentInstructionVersionId: tool.currentInstructionVersionId,
     credentialLastRotatedAt: tool.credentialLastRotatedAt,
@@ -789,7 +793,7 @@ export async function createAgent(
   return {
     agentId: created.id,
     apiKey,
-    instructions: `Add TOOL_PROVISIONING_API_KEY=${apiKey} to the agent configuration.`,
+    instructions: `Add AGENTKEY_API_KEY=${apiKey} to the agent configuration.`,
     agent: createAgentCatalogItem(created),
   };
 }
@@ -894,6 +898,7 @@ export async function suspendAgent(
     .set({
       status: "revoked",
       credentialEncrypted: null,
+      totpSecretEncrypted: null,
       decidedAt: new Date(),
       decidedByUserId: actor.actorId,
       decidedByEmail: actor.actorEmail,
@@ -952,7 +957,7 @@ export async function rotateAgentKey(
   return {
     agentId,
     apiKey,
-    instructions: `Replace the old TOOL_PROVISIONING_API_KEY with ${apiKey}.`,
+    instructions: `Replace the old AGENTKEY_API_KEY with ${apiKey}.`,
   };
 }
 
@@ -975,11 +980,13 @@ async function assignToolToAgentInDb(
   input: {
     toolId: string;
     credential?: string;
+    totpSecret?: string;
   },
   actor: Actor,
 ) {
   const now = new Date();
   const credential = input.credential?.trim();
+  const totpSecret = input.totpSecret?.trim();
   const agent = await db.query.agents.findFirst({
     where: and(
       eq(agents.id, agentId),
@@ -1028,28 +1035,20 @@ async function assignToolToAgentInDb(
       tool.credentialMode === "per_agent" && credential
         ? encryptSecret(credential)
         : null,
+    totpSecretEncrypted:
+      tool.credentialMode === "per_agent" && totpSecret
+        ? encryptSecret(normalizeTotpSecretForStorage(totpSecret))
+        : null,
     decidedByUserId: actor.actorId,
     decidedByEmail: actor.actorEmail,
     decidedAt: now,
     updatedAt: now,
   };
 
-  const [grant] = existing
-    ? await db
-        .update(accessGrants)
-        .set(grantValues)
-        .where(eq(accessGrants.id, existing.id))
-        .returning()
-    : await db
-        .insert(accessGrants)
-        .values({
-          organizationId,
-          agentId,
-          toolId: input.toolId,
-          ...grantValues,
-        })
-        .returning();
-
+  // D1 executes this flow without a transaction. As with approveRequest,
+  // persist the authorization audit before enabling access, so an audit
+  // outage cannot leave an approved but unrecorded grant.
+  const grantId = existing?.id ?? crypto.randomUUID();
   await appendAuditLog(
     {
       organizationId,
@@ -1059,7 +1058,7 @@ async function assignToolToAgentInDb(
       action:
         existing?.status === "pending" ? "grant.approved" : "grant.assigned",
       targetType: "access_grant",
-      targetId: grant.id,
+      targetId: grantId,
       metadata: {
         agentId,
         toolId: tool.id,
@@ -1068,6 +1067,32 @@ async function assignToolToAgentInDb(
     },
     db,
   );
+
+  const [grant] = existing
+    ? await db
+        .update(accessGrants)
+        .set(grantValues)
+        .where(and(
+          eq(accessGrants.id, existing.id),
+          eq(accessGrants.organizationId, organizationId),
+          eq(accessGrants.status, existing.status),
+          eq(accessGrants.updatedAt, existing.updatedAt),
+        ))
+        .returning()
+    : await db
+        .insert(accessGrants)
+        .values({
+          id: grantId,
+          organizationId,
+          agentId,
+          toolId: input.toolId,
+          ...grantValues,
+        })
+        .returning();
+
+  if (!grant) {
+    throw new AppError("The grant changed during assignment. Refresh and try again.", 409);
+  }
 
   return grant;
 }
@@ -1078,6 +1103,7 @@ export async function assignToolToAgent(
   input: {
     toolId: string;
     credential?: string;
+    totpSecret?: string;
   },
   actor: Actor,
   options?: { db?: DbScope },
@@ -1143,6 +1169,7 @@ export async function revokeAgentToolAccess(
     .set({
       status: "revoked",
       credentialEncrypted: null,
+      totpSecretEncrypted: null,
       decidedAt: new Date(),
       decidedByUserId: actor.actorId,
       decidedByEmail: actor.actorEmail,
@@ -1203,6 +1230,7 @@ async function createToolInDb(
     authType: typeof tools.$inferInsert.authType;
     credentialMode: ToolCredentialMode;
     credential?: string;
+    totpSecret?: string;
     instructions?: string;
     sourceSuggestionId?: string;
   },
@@ -1211,6 +1239,7 @@ async function createToolInDb(
 ) {
   const now = new Date();
   const sharedCredential = input.credential?.trim();
+  const sharedTotpSecret = input.totpSecret?.trim();
   const nextInstructions = input.instructions?.trim() || null;
   const configKey = await resolveToolConfigKey(
     db,
@@ -1229,6 +1258,10 @@ async function createToolInDb(
       authType: input.authType,
       credentialMode: input.credentialMode,
       credentialEncrypted: sharedCredential ? encryptSecret(sharedCredential) : null,
+      totpSecretEncrypted:
+        input.credentialMode === "shared" && sharedTotpSecret
+          ? encryptSecret(normalizeTotpSecretForStorage(sharedTotpSecret))
+          : null,
       credentialLastRotatedAt:
         input.credentialMode === "shared" && sharedCredential ? now : null,
       instructions: nextInstructions,
@@ -1326,6 +1359,7 @@ export async function createTool(
     authType: typeof tools.$inferInsert.authType;
     credentialMode: ToolCredentialMode;
     credential?: string;
+    totpSecret?: string;
     instructions?: string;
     sourceSuggestionId?: string;
   },
@@ -1348,7 +1382,10 @@ export async function updateTool(
     name?: string;
     description?: string;
     url?: string;
+    authType?: typeof tools.$inferInsert.authType;
     credential?: string;
+    totpSecret?: string;
+    clearTotpSecret?: boolean;
     instructions?: string;
     credentialExpiresAt?: string | null;
     acceptedInstructionSuggestionId?: string;
@@ -1372,6 +1409,16 @@ export async function updateTool(
       );
     }
 
+    if (
+      existing.credentialMode === "per_agent" &&
+      (input.totpSecret || input.clearTotpSecret)
+    ) {
+      throw new AppError(
+        "Per-agent tools cannot store a shared TOTP secret.",
+        400,
+      );
+    }
+
     if (!existing.currentInstructionVersionId) {
       throw new AppError("Instruction history is not configured for this tool.", 500);
     }
@@ -1379,6 +1426,13 @@ export async function updateTool(
     const nextCredential = input.credential?.trim();
     const shouldRotateCredential =
       existing.credentialMode === "shared" && Boolean(nextCredential);
+    const nextTotpSecret = input.totpSecret?.trim();
+    const shouldRotateTotp =
+      existing.credentialMode === "shared" && Boolean(nextTotpSecret);
+    const shouldClearTotp =
+      existing.credentialMode === "shared" &&
+      Boolean(input.clearTotpSecret) &&
+      !shouldRotateTotp;
     const nextCredentialExpiresAt =
       input.credentialExpiresAt === undefined
         ? existing.credentialExpiresAt
@@ -1456,12 +1510,19 @@ export async function updateTool(
           input.url === undefined
             ? existing.url
             : normalizeToolUrl(input.url) ?? null,
+        authType: input.authType ?? existing.authType,
         instructions: nextInstructions,
         currentInstructionVersionId: version.id,
         credentialEncrypted:
           shouldRotateCredential && nextCredential
             ? encryptSecret(nextCredential)
             : existing.credentialEncrypted,
+        totpSecretEncrypted:
+          shouldRotateTotp && nextTotpSecret
+            ? encryptSecret(normalizeTotpSecretForStorage(nextTotpSecret))
+            : shouldClearTotp
+              ? null
+              : existing.totpSecretEncrypted,
         credentialLastRotatedAt: shouldRotateCredential
           ? new Date()
           : existing.credentialLastRotatedAt,
@@ -1485,6 +1546,8 @@ export async function updateTool(
         targetId: updated.id,
         metadata: {
           rotatedCredential: shouldRotateCredential,
+          rotatedTotp: shouldRotateTotp,
+          clearedTotp: shouldClearTotp,
           credentialMode: updated.credentialMode,
           name: updated.name,
           instructionVersionSource: versionSource,
@@ -1736,7 +1799,9 @@ export async function applyToolCatalogImport(
   actor: Actor,
 ) {
   const db = getDb();
-  const diff = await previewToolCatalogImport(organizationId, input);
+  const { importedTools, invalidItems } = parseToolCatalogDocument(input);
+  const existingTools = await getExistingToolSnapshots(organizationId);
+  const diff = diffToolCatalog(existingTools, importedTools, invalidItems);
 
   if (diff.counts.invalid > 0) {
     throw new AppError(
@@ -1746,7 +1811,6 @@ export async function applyToolCatalogImport(
     );
   }
 
-  const existingTools = await getExistingToolSnapshots(organizationId);
   const existingByKey = new Map(existingTools.map((tool) => [tool.configKey, tool]));
   let created = 0;
   let updated = 0;
@@ -1791,7 +1855,6 @@ export async function applyToolCatalogImport(
         description: imported.description,
         url: imported.url,
         authType: imported.authType,
-        credentialMode: imported.credentialMode,
         instructions: imported.instructions || null,
         updatedAt: new Date(),
       })
@@ -1842,6 +1905,7 @@ export async function listPendingRequests(organizationId: string) {
       agentDescription: agents.description,
       toolId: tools.id,
       toolName: tools.name,
+      toolAuthType: tools.authType,
       toolCredentialMode: tools.credentialMode,
       reason: accessGrants.reason,
       requestedAt: accessGrants.requestedAt,
@@ -1890,6 +1954,7 @@ export async function approveRequest(
   requestId: string,
   credential: string | undefined,
   actor: Actor,
+  options?: { totpSecret?: string },
 ) {
   return runDbMutation(async (tx) => {
     const pending = await tx
@@ -1924,9 +1989,14 @@ export async function approveRequest(
     assertApprovalInput(grant.toolCredentialMode, credential);
 
     const now = new Date();
+    const totpSecret = options?.totpSecret?.trim();
     const credentialEncrypted =
       grant.toolCredentialMode === "per_agent" && credential
         ? encryptSecret(credential)
+        : null;
+    const totpSecretEncrypted =
+      grant.toolCredentialMode === "per_agent" && totpSecret
+        ? encryptSecret(normalizeTotpSecretForStorage(totpSecret))
         : null;
 
     await appendAuditLog(
@@ -1953,6 +2023,7 @@ export async function approveRequest(
         status: "approved",
         denialReason: null,
         credentialEncrypted,
+        totpSecretEncrypted,
         decidedByUserId: actor.actorId,
         decidedByEmail: actor.actorEmail,
         decidedAt: now,
@@ -2012,6 +2083,7 @@ export async function denyRequest(
       status: "denied",
       denialReason: reason?.trim() || null,
       credentialEncrypted: null,
+      totpSecretEncrypted: null,
       decidedByUserId: actor.actorId,
       decidedByEmail: actor.actorEmail,
       decidedAt: new Date(),

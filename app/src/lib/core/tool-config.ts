@@ -34,10 +34,11 @@ const importedToolSchema = z
         (value) => value === undefined || value === "" || !!normalizeToolUrl(value),
         "Enter a valid HTTP or HTTPS URL.",
       ),
-    authType: z.enum(["api_key", "oauth_token", "bot_token", "other"]),
+    authType: z.enum(["api_key", "oauth_token", "bot_token", "login", "other"]),
     credentialMode: z.enum(["shared", "per_agent"]),
     instructions: z.string().trim().max(4000).default(""),
     credentialConfigured: z.boolean().optional(),
+    totpConfigured: z.boolean().optional(),
   })
   .transform((value) => ({
     key: value.key,
@@ -60,6 +61,7 @@ export type ExportedToolConfig = {
   credentialMode: ToolCredentialMode;
   instructions: string;
   credentialConfigured: boolean;
+  totpConfigured?: boolean;
 };
 
 export type ToolCatalogDocument = {
@@ -269,15 +271,28 @@ export function diffToolCatalog(
       continue;
     }
 
+    // Existing approvals authorize a particular credential model. Switching
+    // models while retaining grants can expose a stale shared credential to
+    // agents that were approved only for their own per-agent credential.
+    if (existing.credentialMode !== imported.credentialMode) {
+      counts.invalid += 1;
+      items.push({
+        action: "invalid",
+        key: imported.key,
+        name: imported.name,
+        errors: [
+          "Credential mode cannot be changed for an existing tool. Create a new tool and approve access to it separately.",
+        ],
+      });
+      continue;
+    }
+
     const changes: string[] = [];
 
     if (existing.name !== imported.name) changes.push("name");
     if (existing.description !== imported.description) changes.push("description");
     if ((existing.url ?? null) !== imported.url) changes.push("url");
     if (existing.authType !== imported.authType) changes.push("authType");
-    if (existing.credentialMode !== imported.credentialMode) {
-      changes.push("credentialMode");
-    }
     if ((existing.instructions ?? "") !== imported.instructions) {
       changes.push("instructions");
     }

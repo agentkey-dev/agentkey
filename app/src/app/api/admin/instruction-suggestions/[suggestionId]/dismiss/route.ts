@@ -6,8 +6,12 @@ import {
   jsonError,
   readJsonBody,
 } from "@/lib/http";
+import { enforceRateLimit } from "@/lib/ratelimit";
 import { dismissToolInstructionSuggestion } from "@/lib/services/tool-instructions";
-import { dismissInstructionSuggestionSchema } from "@/lib/validation";
+import {
+  assertValidUuid,
+  dismissInstructionSuggestionSchema,
+} from "@/lib/validation";
 
 export async function POST(
   request: Request,
@@ -24,7 +28,10 @@ export async function POST(
       return jsonError("Select or create an organization first.", 409);
     }
 
+    await enforceRateLimit(adminContext.userId, "admin");
+
     const { suggestionId } = await context.params;
+    assertValidUuid(suggestionId, "Suggestion ID");
     const parsed = await readJsonBody(
       request,
       dismissInstructionSuggestionSchema,

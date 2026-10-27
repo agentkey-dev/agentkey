@@ -30,6 +30,7 @@ export const toolAuthTypeEnum = enumValues([
   "api_key",
   "oauth_token",
   "bot_token",
+  "login",
   "other",
 ] as const);
 export const toolCredentialModeEnum = enumValues(["shared", "per_agent"] as const);
@@ -257,6 +258,7 @@ export const tools = sqliteTable(
       enum: toolCredentialModeEnum.enumValues,
     }).notNull(),
     credentialEncrypted: text("credential_encrypted"),
+    totpSecretEncrypted: text("totp_secret_encrypted"),
     credentialLastRotatedAt: date("credential_last_rotated_at"),
     credentialExpiresAt: date("credential_expires_at"),
     instructions: text("instructions"),
@@ -324,6 +326,7 @@ export const accessGrants = sqliteTable(
     reason: text("reason"),
     denialReason: text("denial_reason"),
     credentialEncrypted: text("credential_encrypted"),
+    totpSecretEncrypted: text("totp_secret_encrypted"),
     requestedAt: requiredDate("requested_at"),
     decidedByUserId: text("decided_by_user_id"),
     decidedByEmail: text("decided_by_email"),

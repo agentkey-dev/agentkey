@@ -5,6 +5,7 @@ import {
   jsonData,
   jsonError,
 } from "@/lib/http";
+import { enforceRateLimit } from "@/lib/ratelimit";
 import { dismissToolSuggestion } from "@/lib/services/tool-suggestions";
 import { assertValidUuid } from "@/lib/validation";
 
@@ -23,6 +24,8 @@ export async function POST(
     if (adminContext.kind === "missing-org") {
       return jsonError("Select or create an organization first.", 409);
     }
+
+    await enforceRateLimit(adminContext.userId, "admin");
 
     const { suggestionId } = await context.params;
     assertValidUuid(suggestionId, "Suggestion ID");

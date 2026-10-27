@@ -2,15 +2,19 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "main": "worker.js",
   "name": "agentkey",
+  "workers_dev": false,
+  "preview_urls": false,
   "compatibility_date": "2026-05-18",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "directory": ".open-next/assets",
-    "binding": "ASSETS"
+    "binding": "ASSETS",
+    "run_worker_first": true
   },
   "observability": {
     "enabled": true,
-    "head_sampling_rate": 1
+    "head_sampling_rate": 1,
+    "redact_query_string": true
   },
   "triggers": {
     "crons": ["*/15 * * * *"]
@@ -43,6 +47,10 @@
   "routes": [
     {
       "pattern": "agentkey.dev",
+      "custom_domain": true
+    },
+    {
+      "pattern": "www.agentkey.dev",
       "custom_domain": true
     }
   ]

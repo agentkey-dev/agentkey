@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { readAuthFormData } from "@/lib/auth/form";
 
 import {
   consumeLoginToken,
@@ -8,7 +9,7 @@ import {
   getFirstOrganizationForUser,
   loginTokenHasRequiredVerification,
 } from "@/lib/auth/session";
-import { isSameOriginRequest } from "@/lib/http";
+import { handleRouteError, isSameOriginRequest } from "@/lib/http";
 import { getAppOrigin } from "@/lib/origin";
 
 /**
@@ -45,6 +46,13 @@ function escapeHtml(value: string) {
 function signInRedirect(error: string) {
   return NextResponse.redirect(
     new URL(`/sign-in?error=${error}`, getAppOrigin()),
+    {
+      status: 303,
+      headers: {
+        "Cache-Control": "no-store, private",
+        "Referrer-Policy": "no-referrer",
+      },
+    },
   );
 }
 
@@ -58,7 +66,7 @@ function renderConfirmation(token: string, email: string) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="referrer" content="no-referrer">
+<meta name="referrer" content="strict-origin">
 <title>Confirm sign in — AgentKey</title>
 <style>
   :root { color-scheme: dark; }
@@ -92,10 +100,14 @@ function renderConfirmation(token: string, email: string) {
       headers: {
         "Content-Type": "text/html; charset=utf-8",
         // The URL carries a live login token — keep it out of caches and
-        // shared proxies, and send no Referer onward.
+        // shared proxies. Send only the origin as Referer: no-referrer also
+        // forces Origin:null on native form POSTs, which our CSRF guard rejects.
         "Cache-Control": "no-store, private",
-        "Referrer-Policy": "no-referrer",
+        "Referrer-Policy": "strict-origin",
         "X-Robots-Tag": "noindex, nofollow",
+        "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+        "X-Frame-Options": "DENY",
+        "X-Content-Type-Options": "nosniff",
       },
     },
   );
@@ -129,34 +141,44 @@ export async function POST(request: Request) {
     return signInRedirect("invalid-origin");
   }
 
-  const formData = await request.formData();
-  const token = formData.get("token");
+  try {
+    const formData = await readAuthFormData(request);
+    const token = formData.get("token");
 
-  if (typeof token !== "string" || !token) {
-    return signInRedirect("missing-token");
+    if (typeof token !== "string" || !token) {
+      return signInRedirect("missing-token");
+    }
+
+    const loginToken = await consumeLoginToken(token);
+
+    if (!loginToken) {
+      return signInRedirect("expired");
+    }
+
+    if (!loginTokenHasRequiredVerification(loginToken)) {
+      return signInRedirect("verification");
+    }
+
+    const user = await findOrCreateUser(loginToken.email);
+    const organization = await getFirstOrganizationForUser(user.id);
+
+    await createSession({
+      userId: user.id,
+      selectedOrganizationId: organization?.id ?? null,
+    });
+
+    // 303 so the browser follows with GET after the POST.
+    return NextResponse.redirect(
+      new URL(organization ? "/dashboard" : "/onboarding", getAppOrigin()),
+      {
+        status: 303,
+        headers: {
+          "Cache-Control": "no-store, private",
+          "Referrer-Policy": "no-referrer",
+        },
+      },
+    );
+  } catch (error) {
+    return handleRouteError(error);
   }
-
-  const loginToken = await consumeLoginToken(token);
-
-  if (!loginToken) {
-    return signInRedirect("expired");
-  }
-
-  if (!loginTokenHasRequiredVerification(loginToken)) {
-    return signInRedirect("verification");
-  }
-
-  const user = await findOrCreateUser(loginToken.email);
-  const organization = await getFirstOrganizationForUser(user.id);
-
-  await createSession({
-    userId: user.id,
-    selectedOrganizationId: organization?.id ?? null,
-  });
-
-  // 303 so the browser follows with GET after the POST.
-  return NextResponse.redirect(
-    new URL(organization ? "/dashboard" : "/onboarding", getAppOrigin()),
-    { status: 303 },
-  );
 }

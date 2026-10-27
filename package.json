@@ -8,6 +8,11 @@
   "workspaces": [
     "app"
   ],
+  "overrides": {
+    "@esbuild-kit/core-utils": {
+      "esbuild": "^0.28.1"
+    }
+  },
   "scripts": {
     "dev": "npm run dev --workspace app",
     "dev:turbo": "npm run dev:turbo --workspace app",

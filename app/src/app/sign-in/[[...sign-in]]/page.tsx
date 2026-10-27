@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
+import { getAdminContext, getAdminLandingPath } from "@/lib/auth/admin";
+import { getSignInErrorMessage } from "@/lib/auth/sign-in-error";
 import { getOptionalTurnstileSiteKey } from "@/lib/env";
 
 export const metadata: Metadata = {
@@ -21,10 +24,17 @@ export default async function SignInPage({
 }: {
   searchParams?: Promise<SignInSearchParams>;
 }) {
+  const destination = getAdminLandingPath(await getAdminContext());
+
+  if (destination) {
+    redirect(destination);
+  }
+
   const params = await searchParams;
   const turnstileSiteKey = getOptionalTurnstileSiteKey();
   const sent = params?.sent === "1";
   const email = params?.email ?? "";
+  const errorMessage = getSignInErrorMessage(params?.error);
 
   return (
     <main className="min-h-screen bg-surface px-6 py-10">
@@ -70,9 +80,9 @@ export default async function SignInPage({
                 Check {email || "your inbox"} for your sign-in link.
               </div>
             ) : null}
-            {params?.error ? (
+            {errorMessage ? (
               <div className="mb-5 rounded-sm border border-error/30 bg-error/10 px-4 py-3 text-sm text-on-surface">
-                That sign-in link is invalid or expired. Request a new one.
+                {errorMessage}
               </div>
             ) : null}
             <form action="/api/auth/magic-link" method="post" className="space-y-5">

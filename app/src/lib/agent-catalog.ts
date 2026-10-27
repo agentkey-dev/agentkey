@@ -23,7 +23,7 @@ export type AgentRecentActivityEvent = {
 
 export type AgentCatalogItem = Omit<
   typeof agents.$inferSelect,
-  "createdAt" | "updatedAt"
+  "createdAt" | "updatedAt" | "apiKeyHash"
 > & {
   createdAt: Date | string;
   updatedAt: Date | string;
@@ -50,7 +50,15 @@ export function createAgentCatalogItem(
   lastActiveAt: Date | string | null = null,
 ): AgentCatalogItem {
   return {
-    ...agent,
+    id: agent.id,
+    organizationId: agent.organizationId,
+    name: agent.name,
+    description: agent.description,
+    createdByUserId: agent.createdByUserId,
+    createdByEmail: agent.createdByEmail,
+    status: agent.status,
+    createdAt: agent.createdAt,
+    updatedAt: agent.updatedAt,
     lastActiveAt,
     toolsGranted: access?.granted ?? [],
     toolsPending: access?.pending ?? [],

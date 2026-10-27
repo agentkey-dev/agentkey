@@ -3,11 +3,13 @@ import {
   agentCorsPreflight,
   assertAllowedAgentOrigin,
   handleAgentRouteError,
+  getRequestMetadata,
   jsonSuccess,
   withAgentCors,
 } from "@/lib/http";
 import { enforceRateLimit } from "@/lib/ratelimit";
 import { getCredentialForAgent } from "@/lib/services/agent";
+import { formatVendedCredentialValue } from "@/lib/totp";
 import { assertValidUuid } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
@@ -41,17 +43,13 @@ export async function GET(
       agentContext.agentId,
       toolId,
       agentContext.agentName,
+      getRequestMetadata(request),
     );
 
-    let credentialValue: string | Record<string, unknown> =
-      credential.credential;
-    if (credential.authType === "oauth_token") {
-      try {
-        credentialValue = JSON.parse(credential.credential);
-      } catch {
-        // not JSON — return as-is
-      }
-    }
+    const credentialValue = formatVendedCredentialValue(
+      credential.authType,
+      credential.credential,
+    );
 
     return withAgentCors(
       request,
@@ -61,6 +59,12 @@ export async function GET(
           tool_name: credential.toolName,
           auth_type: credential.authType,
           credential: credentialValue,
+          ...(credential.otp
+            ? {
+                otp: credential.otp,
+                otp_endpoint: `/api/tools/${credential.toolId}/otp`,
+              }
+            : {}),
           instructions: credential.instructions,
           suggest_instructions_endpoint: `/api/tools/${credential.toolId}/instructions/suggest`,
         },
