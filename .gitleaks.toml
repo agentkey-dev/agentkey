@@ -1,0 +1,36 @@
+title = "AgentKey secret scanning"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "totp-seed"
+description = "TOTP seed in a quoted credential assignment"
+regex = '''(?i)(?:totp|2fa|otp|authenticator|seed|secret)[a-z_ \t]{0,40}[:=][ \t]*["']([a-z2-7]{16,128})["']'''
+secretGroup = 1
+
+[[rules]]
+id = "totp-uri-seed"
+description = "TOTP seed in an otpauth URI"
+regex = '''(?i)otpauth://[^\s"']*[?&]secret=([a-z2-7]{16,128})(?:[&"'\s]|$)'''
+secretGroup = 1
+
+[[rules]]
+id = "totp-instruction-seed"
+description = "Plaintext TOTP seed in usage instructions"
+regex = '''(?i)(?:totp|2fa|otp|authenticator)[a-z_ \t]{0,40}:[ \t]*([a-z2-7]{16,128})(?:["'\r\n]|$)'''
+secretGroup = 1
+
+[[rules]]
+id = "totp-function-seed"
+description = "Literal TOTP seed passed directly to an OTP helper"
+regex = '''(?i)(?:parseTotpSecretInput|normalizeTotpSecretForStorage|generateTotpSnapshot)\([ \t]*["']([a-z2-7]{16,128})\b'''
+secretGroup = 1
+
+[[allowlists]]
+description = "Public RFC 6238 test vector and documented example seed only"
+regexTarget = "secret"
+regexes = [
+  '''^GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ$''',
+  '''^JBSWY3DPEHPK3PXP$''',
+]
