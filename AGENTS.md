@@ -20,6 +20,7 @@ The `/credentials` endpoint returns:
 - `instructions` — **read this carefully**. It contains company-specific context: API base URLs, relevant IDs (channel IDs, repo URLs, project keys), conventions, and rules for how to use this tool in this organization.
 
 ### Important
+- Never put live credentials, TOTP seeds, or vault responses in source, fixtures, snapshots, logs, or commit messages. Use public RFC vectors or explicitly synthetic data. Run `gitleaks dir --redact --no-banner .` before publishing; test files are included in the scan.
 - You start with access to **nothing**. Always check `GET /api/tools` first.
 - Never hardcode credentials. Always fetch them from AgentKey when you need them.
 - If a credential stops working, re-fetch it — an admin may have rotated it.

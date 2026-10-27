@@ -25,6 +25,7 @@ import {
 process.env.ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
 
 const RFC_6238_BASE32_SECRET = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+// Public example seed only. Never copy credentials from a vault or live account.
 
 async function withDb<T>(db: unknown, run: () => Promise<T>): Promise<T> {
   const previous = globalThis.__toolProvisioningDb;
@@ -64,7 +65,7 @@ test("generateTotpSnapshot matches RFC 6238 SHA1 test vectors and computes next_
 });
 
 test("parseTotpSecretInput supports Microsoft-style 16-char Base32 secrets and otpauth URIs", () => {
-  const parsedRaw = parseTotpSecretInput("JBSWY3DPEHPK3PXP");
+  const parsedRaw = parseTotpSecretInput("jbsw y3dp ehpk 3pxp");
   assert.equal(parsedRaw.secret, "JBSWY3DPEHPK3PXP");
   assert.equal(parsedRaw.digits, 6);
   assert.equal(parsedRaw.period, 30);
@@ -79,7 +80,7 @@ test("parseTotpSecretInput supports Microsoft-style 16-char Base32 secrets and o
   assert.match(snapshot.next_code, /^\d{6}$/);
 
   const uri =
-    "otpauth://totp/Microsoft:antoine%40elba.security?secret=JBSWY3DPEHPK3PXP&issuer=Microsoft&algorithm=SHA256&digits=6&period=30";
+    "otpauth://totp/Microsoft:agent%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Microsoft&algorithm=SHA256&digits=6&period=30";
   const parsedUri = parseTotpSecretInput(uri);
   assert.equal(parsedUri.secret, "JBSWY3DPEHPK3PXP");
   assert.equal(parsedUri.algorithm, "SHA256");
@@ -96,17 +97,17 @@ test("parseTotpSecretInput supports Microsoft-style 16-char Base32 secrets and o
 
 test("login credential helpers serialize, parse, and format structured credentials", () => {
   const serialized = serializeLoginCredential({
-    username: "antoine@elba.security",
+    username: "agent@example.com",
     password: "super-secret-password",
   });
   const parsed = parseLoginCredential(serialized);
   assert.deepEqual(parsed, {
-    username: "antoine@elba.security",
+    username: "agent@example.com",
     password: "super-secret-password",
   });
 
   assert.deepEqual(formatVendedCredentialValue("login", serialized), {
-    username: "antoine@elba.security",
+    username: "agent@example.com",
     password: "super-secret-password",
   });
   assert.equal(
@@ -117,12 +118,12 @@ test("login credential helpers serialize, parse, and format structured credentia
 
 test("detectPlaintextSecretInInstructions flags and extracts TOTP seeds from instructions", () => {
   const instructions =
-    "antoine@elba.security\nsecret key for TOTP : JBSWY3DPEHPK3PXP";
+    "agent@example.com\nsecret key for TOTP : JBSWY3DPEHPK3PXP";
   const detected = detectPlaintextSecretInInstructions(instructions);
 
   assert.ok(detected);
   assert.equal(detected.extractedTotpSecret, "JBSWY3DPEHPK3PXP");
-  assert.equal(detected.cleanedInstructions, "antoine@elba.security");
+  assert.equal(detected.cleanedInstructions, "agent@example.com");
 
   const otpauthDetected = detectPlaintextSecretInInstructions(
     "Login at https://login.microsoftonline.com\notpauth://totp/Microsoft?secret=JBSWY3DPEHPK3PXP",
@@ -135,7 +136,7 @@ test("detectPlaintextSecretInInstructions flags and extracts TOTP seeds from ins
   );
 
   const pemDetected = detectPlaintextSecretInInstructions(
-    "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC\n-----END PRIVATE KEY-----",
+    "-----BEGIN PRIVATE KEY-----",
   );
   assert.ok(pemDetected);
   assert.equal(pemDetected.extractedTotpSecret, undefined);
@@ -154,7 +155,7 @@ test("validation schemas accept login authType and totpSecret and reject invalid
     authType: "login",
     credentialMode: "shared",
     credential: serializeLoginCredential({
-      username: "antoine@elba.security",
+      username: "agent@example.com",
       password: "pw",
     }),
     totpSecret: "JBSWY3DPEHPK3PXP",
@@ -196,7 +197,7 @@ test("validation schemas accept login authType and totpSecret and reject invalid
   );
   assert.equal(
     assignToolToAgentSchema.safeParse({
-      toolId: "5e2f895b-3430-4fb3-b7b7-ca1d9b984874",
+      toolId: "11111111-1111-4111-8111-111111111111",
       credential: "secret",
       totpSecret: "JBSWY3DPEHPK3PXP",
     }).success,
@@ -209,7 +210,7 @@ test("getCredentialForAgent and getOtpForAgent vend computed OTP codes without e
   const encryptedSeed = encryptSecret(rawSeed);
   const encryptedLogin = encryptSecret(
     serializeLoginCredential({
-      username: "antoine@elba.security",
+      username: "agent@example.com",
       password: "password-123",
     }),
   );
