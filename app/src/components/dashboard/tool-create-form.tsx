@@ -1,5 +1,7 @@
 "use client";
 
+import { CredentialTextarea } from "@/components/dashboard/credential-textarea";
+
 import { useEffect, useRef, useState, useTransition } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -714,11 +716,10 @@ export function ToolCreateForm({
                   />
                 </label>
               </div>
-            ) : form.authType === "oauth_token" ? (
-              <textarea
+            ) : (form.authType === "oauth_token" || form.authType === "other") ? (
+              <CredentialTextarea
                 required
                 rows={4}
-                autoComplete="off"
                 value={form.credential}
                 onChange={(event) =>
                   setForm((current) => ({
@@ -727,7 +728,7 @@ export function ToolCreateForm({
                   }))
                 }
                 className="w-full border border-white/10 bg-surface px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
-                placeholder='{"client_id": "...", "client_secret": "...", "refresh_token": "..."}'
+                placeholder="Paste JSON, PEM, or multiline credentials"
               />
             ) : (
               <input
