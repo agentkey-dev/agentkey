@@ -1,5 +1,7 @@
 "use client";
 
+import { CredentialTextarea } from "@/components/dashboard/credential-textarea";
+
 import {
   useEffect,
   useMemo,
@@ -522,16 +524,15 @@ function AgentToggleRow({
                 placeholder="Password"
               />
             </div>
-          ) : toolAuthType === "oauth_token" ? (
-            <textarea
+          ) : (toolAuthType === "oauth_token" || toolAuthType === "other") ? (
+            <CredentialTextarea
               value={credential}
               onChange={(event) => setCredential(event.target.value)}
               rows={2}
               autoFocus
-              autoComplete="off"
               disabled={isPending}
               className="w-full border border-white/10 bg-surface px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
-              placeholder="Per-agent credential as JSON"
+              placeholder="Paste JSON, PEM, or multiline credentials"
             />
           ) : (
             <input
@@ -737,15 +738,14 @@ function PendingAgentLine({
                 placeholder="Password"
               />
             </div>
-          ) : tool.authType === "oauth_token" ? (
-            <textarea
+          ) : (tool.authType === "oauth_token" || tool.authType === "other") ? (
+            <CredentialTextarea
               value={credential}
               onChange={(event) => setCredential(event.target.value)}
               rows={2}
               disabled={disabled || isPending}
-              autoComplete="off"
               className="w-full border border-white/10 bg-surface px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
-              placeholder="Per-agent credential as JSON"
+              placeholder="Paste JSON, PEM, or multiline credentials"
             />
           ) : (
             <input

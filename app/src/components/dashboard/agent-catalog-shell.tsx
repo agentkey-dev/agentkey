@@ -1,5 +1,7 @@
 "use client";
 
+import { CredentialTextarea } from "@/components/dashboard/credential-textarea";
+
 import {
   cloneElement,
   isValidElement,
@@ -347,15 +349,14 @@ function PendingRequestLine({
                 placeholder="Password"
               />
             </div>
-          ) : chip.authType === "oauth_token" ? (
-            <textarea
+          ) : (chip.authType === "oauth_token" || chip.authType === "other") ? (
+            <CredentialTextarea
               value={credential}
               onChange={(event) => setCredential(event.target.value)}
               rows={2}
               disabled={disabled || isPending}
-              autoComplete="off"
               className="w-full border border-white/10 bg-surface px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
-              placeholder='Per-agent credential — {"client_id": "...", "refresh_token": "..."}'
+              placeholder="Paste JSON, PEM, or multiline credentials"
             />
           ) : (
             <input
@@ -549,16 +550,15 @@ function ToolToggleRow({
                 placeholder="Password"
               />
             </div>
-          ) : row.authType === "oauth_token" ? (
-            <textarea
+          ) : (row.authType === "oauth_token" || row.authType === "other") ? (
+            <CredentialTextarea
               value={credential}
               onChange={(event) => setCredential(event.target.value)}
               rows={2}
               autoFocus
-              autoComplete="off"
               disabled={isPending}
               className="w-full border border-white/10 bg-surface px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
-              placeholder='Per-agent credential as JSON'
+              placeholder="Paste JSON, PEM, or multiline credentials"
             />
           ) : (
             <input

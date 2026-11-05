@@ -1,5 +1,7 @@
 "use client";
 
+import { CredentialTextarea } from "@/components/dashboard/credential-textarea";
+
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
@@ -181,7 +183,8 @@ function AccessRequestRow({
   const [isPending, startTransition] = useTransition();
   const needsCredential = request.toolCredentialMode === "per_agent";
   const isLoginTool = request.toolAuthType === "login";
-  const isOAuthTool = request.toolAuthType === "oauth_token";
+  const isStructuredTool =
+    request.toolAuthType === "oauth_token" || request.toolAuthType === "other";
   const canConfirmPerAgentApprove = isLoginTool
     ? loginUsername.trim().length > 0 && loginPassword.length > 0
     : credential.trim().length > 0;
@@ -300,14 +303,13 @@ function AccessRequestRow({
                   className="w-full border border-white/10 bg-surface px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
                 />
               </div>
-            ) : isOAuthTool ? (
-              <textarea
+            ) : isStructuredTool ? (
+              <CredentialTextarea
                 rows={2}
                 autoFocus
-                autoComplete="off"
                 value={credential}
                 onChange={(event) => setCredential(event.target.value)}
-                placeholder='{"client_id": "...", "refresh_token": "..."}'
+                placeholder="Paste JSON, PEM, or multiline credentials"
                 className="w-full border border-white/10 bg-surface px-3 py-2 font-mono text-xs text-on-surface outline-none focus:border-primary"
               />
             ) : (

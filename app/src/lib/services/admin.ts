@@ -1639,7 +1639,8 @@ export async function updateTool(
       resolutionSource: "tool_updated",
     });
 
-    return toToolCatalogItem(updated);
+    const accessSummary = await getToolAccessLists(tx, organizationId, toolId);
+    return toToolCatalogItem(updated, accessSummary);
   });
 }
 

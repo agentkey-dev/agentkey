@@ -1,5 +1,7 @@
 "use client";
 
+import { CredentialTextarea } from "@/components/dashboard/credential-textarea";
+
 import { useEffect, useRef, useState, useTransition } from "react";
 import { unwrapResponseData } from "@/components/dashboard/api";
 import { buildInstructionSuggestionDraft } from "@/lib/core/tool-instruction-suggestions";
@@ -75,6 +77,7 @@ export function ToolUpdateForm({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [authType, setAuthType] = useState<ToolAuthType>(tool.authType);
+  const [credential, setCredential] = useState("");
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [totpSecret, setTotpSecret] = useState("");
@@ -177,6 +180,7 @@ export function ToolUpdateForm({
           setClearTotpSecret(false);
           setLoginUsername("");
           setLoginPassword("");
+          setCredential("");
           setSaved(true);
           setTimeout(() => setSaved(false), 3000);
           onUpdated?.({
@@ -400,24 +404,36 @@ export function ToolUpdateForm({
               </p>
             </div>
           ) : (
-            <label className="grid gap-1.5 text-sm text-on-surface-variant">
-              Rotate shared credential
-              <input
-                name="credential"
-                type="password"
-                autoComplete="off"
-                className="border border-white/10 bg-surface px-3 py-2 font-mono text-sm text-on-surface outline-none focus:border-primary"
-                placeholder={
-                  authType === "oauth_token"
-                    ? 'Paste new JSON to rotate, e.g. {"client_id": "...", "refresh_token": "..."}'
-                    : "Paste new credential to rotate (leave blank to keep current)"
-                }
-              />
+            <div className="grid gap-1.5 text-sm text-on-surface-variant">
+              <label htmlFor={`credential-${tool.id}`}>Rotate shared credential</label>
+              {authType === "oauth_token" || authType === "other" ? (
+                <CredentialTextarea
+                  id={`credential-${tool.id}`}
+                  aria-label="Rotate shared credential"
+                  name="credential"
+                  rows={4}
+                  value={credential}
+                  onChange={(event) => setCredential(event.target.value)}
+                  className="border border-white/10 bg-surface px-3 py-2 font-mono text-sm text-on-surface outline-none focus:border-primary"
+                  placeholder="Paste JSON, PEM, or multiline credentials (leave blank to keep current)"
+                />
+              ) : (
+                <input
+                  id={`credential-${tool.id}`}
+                  name="credential"
+                  type="password"
+                  autoComplete="off"
+                  value={credential}
+                  onChange={(event) => setCredential(event.target.value)}
+                  className="border border-white/10 bg-surface px-3 py-2 font-mono text-sm text-on-surface outline-none focus:border-primary"
+                  placeholder="Paste new credential to rotate (leave blank to keep current)"
+                />
+              )}
               <span className="text-xs text-on-surface-variant/70">
-                All agents get the new credential on their next fetch. No
+                Approved agents get the new credential on their next fetch. No
                 disruption.
               </span>
-            </label>
+            </div>
           )}
           <div className="space-y-2 border border-white/10 bg-surface p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
